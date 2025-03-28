@@ -214,11 +214,10 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
         };
       } else if ((data.type === "service" || data.type === "experience")) {
         // For services/experiences
-        // Only include date if it's provided, otherwise it will be null
         listingData = {
           ...baseListingData,
-          // If date is provided, convert to ISO string for PostgreSQL timestamp compatibility
-          ...(data.date && { date: data.date.toISOString() }),
+          // Always include the date field, convert to ISO string if provided
+          date: data.date ? data.date.toISOString() : null,
           duration: data.duration || ""
         };
       } else {

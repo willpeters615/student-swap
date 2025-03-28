@@ -89,12 +89,12 @@ export default function ListingDetail() {
   });
 
   // Check if listing is in user's favorites
-  const { data: favorites } = useQuery<any[]>({
+  const { data: favorites } = useQuery({
     queryKey: ["/api/favorites"],
     enabled: !!user,
-    onSuccess: (data) => {
-      if (data) {
-        const isFav = data.some((fav) => fav.listingId === listingId);
+    onSuccess: (favData: any[]) => {
+      if (favData) {
+        const isFav = favData.some((fav) => fav.listingId === listingId);
         setIsFavorite(isFav);
       }
     },
@@ -179,7 +179,7 @@ export default function ListingDetail() {
   const isOwner = user && data?.owner && user.id === data.owner.id;
 
   // Format date for display
-  const formatDate = (dateString?: string | Date) => {
+  const formatDate = (dateString?: string | Date | null) => {
     if (!dateString) return "Unknown date";
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
@@ -264,7 +264,8 @@ export default function ListingDetail() {
 
   const { listing, owner } = data;
   const fallbackImage = "https://via.placeholder.com/600x400?text=No+Image+Available";
-  const images = listing.images && listing.images.length > 0 
+  // Safely handle images - ensure it's never undefined
+  const images = (listing.images && Array.isArray(listing.images) && listing.images.length > 0)
     ? listing.images 
     : [fallbackImage];
 
