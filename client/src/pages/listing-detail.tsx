@@ -49,7 +49,6 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 
-
 const messageSchema = z.object({
   content: z.string().min(1, "Message cannot be empty"),
 });
@@ -73,11 +72,7 @@ export default function ListingDetail() {
   });
 
   // Fetch listing data
-  const {
-    data,
-    isLoading,
-    error,
-  } = useQuery<ListingDetailData>({
+  const { data, isLoading, error } = useQuery<ListingDetailData>({
     queryKey: [`/api/listings/${listingId}`],
     queryFn: () => apiRequest("GET", `/api/listings/${listingId}`),
     enabled: !!listingId,
@@ -112,13 +107,13 @@ export default function ListingDetail() {
         await apiRequest("DELETE", `/api/favorites/${listingId}`);
         toast({
           title: "Removed from favorites",
-          description: "This listing has been removed from your favorites"
+          description: "This listing has been removed from your favorites",
         });
       } else {
         await apiRequest("POST", "/api/favorites", { listingId });
         toast({
           title: "Added to favorites",
-          description: "This listing has been added to your favorites"
+          description: "This listing has been added to your favorites",
         });
       }
       setIsFavorite(!isFavorite);
@@ -127,7 +122,7 @@ export default function ListingDetail() {
       toast({
         title: "Error",
         description: "Failed to update favorites",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsTogglingFavorite(false);
@@ -203,9 +198,13 @@ export default function ListingDetail() {
           </Link>
           <Card className="p-8 text-center">
             <CardContent>
-              <h1 className="text-2xl font-bold text-red-500 mb-4">Error Loading Listing</h1>
+              <h1 className="text-2xl font-bold text-red-500 mb-4">
+                Error Loading Listing
+              </h1>
               <p className="text-gray-600 mb-6">
-                {error instanceof Error ? error.message : "This listing could not be found or has been removed"}
+                {error instanceof Error
+                  ? error.message
+                  : "This listing could not be found or has been removed"}
               </p>
               <Link href="/">
                 <Button>Browse other listings</Button>
@@ -219,25 +218,30 @@ export default function ListingDetail() {
   }
 
   const { listing, owner } = data;
-  const fallbackImage = "https://via.placeholder.com/600x400?text=No+Image+Available";
-  const images = (listing.images && listing.images.length > 0) ? listing.images : [fallbackImage];
+  const fallbackImage =
+    "http://fakeimage.fly.dev/243x350.gif?color=darkorchid2&textcolor=!B9AF55";
+  const images =
+    listing.images && listing.images.length > 0
+      ? listing.images
+      : [fallbackImage];
   const isOwner = user?.id === owner.id;
 
-  const formatDate = (date: string | Date | null) => { //Restored type
+  const formatDate = (date: string | Date | null) => {
+    //Restored type
     if (!date) return "Unknown date";
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+    return new Date(date).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
@@ -280,21 +284,34 @@ export default function ListingDetail() {
 
             {/* Listing title and price */}
             <div className="flex justify-between items-start mb-4">
-              <h1 className="text-2xl font-bold text-gray-900">{listing.title}</h1>
-              <div className="text-2xl font-bold text-primary">{formatCurrency(listing.price)}</div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {listing.title}
+              </h1>
+              <div className="text-2xl font-bold text-primary">
+                {formatCurrency(listing.price)}
+              </div>
             </div>
 
             {/* Listing metadata */}
             <div className="flex flex-wrap gap-3 mb-6">
-              <Badge variant="secondary" className="flex items-center gap-1 px-3 py-1">
+              <Badge
+                variant="secondary"
+                className="flex items-center gap-1 px-3 py-1"
+              >
                 <Tag className="h-4 w-4" />
                 {listing.condition}
               </Badge>
-              <Badge variant="secondary" className="flex items-center gap-1 px-3 py-1">
+              <Badge
+                variant="secondary"
+                className="flex items-center gap-1 px-3 py-1"
+              >
                 <MapPin className="h-4 w-4" />
                 {listing.location || "On Campus"}
               </Badge>
-              <Badge variant="secondary" className="flex items-center gap-1 px-3 py-1">
+              <Badge
+                variant="secondary"
+                className="flex items-center gap-1 px-3 py-1"
+              >
                 <Calendar className="h-4 w-4" />
                 {formatDate(listing.createdAt)}
               </Badge>
@@ -324,11 +341,15 @@ export default function ListingDetail() {
           <div>
             <Card className="mb-6">
               <CardContent className="p-6">
-                <h2 className="text-lg font-semibold mb-4">Seller Information</h2>
+                <h2 className="text-lg font-semibold mb-4">
+                  Seller Information
+                </h2>
                 <div className="flex items-center space-x-4 mb-6">
                   <Avatar className="h-12 w-12">
                     <AvatarImage src="" alt={owner.username} />
-                    <AvatarFallback>{owner.username.substring(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback>
+                      {owner.username.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
                   </Avatar>
                   <div>
                     <p className="font-medium">{owner.username}</p>
@@ -369,11 +390,7 @@ export default function ListingDetail() {
                     </Button>
                   </div>
                 ) : (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    disabled
-                  >
+                  <Button variant="outline" className="w-full" disabled>
                     This is your listing
                   </Button>
                 )}
@@ -404,7 +421,10 @@ export default function ListingDetail() {
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmitMessage)} className="space-y-4">
+            <form
+              onSubmit={form.handleSubmit(onSubmitMessage)}
+              className="space-y-4"
+            >
               <FormField
                 control={form.control}
                 name="content"
@@ -430,10 +450,7 @@ export default function ListingDetail() {
                 >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={sendMessageMutation.isPending}
-                >
+                <Button type="submit" disabled={sendMessageMutation.isPending}>
                   {sendMessageMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -452,7 +469,8 @@ export default function ListingDetail() {
   );
 }
 
-interface ListingDetailData { //Restored interface
+interface ListingDetailData {
+  //Restored interface
   listing: Listing;
   owner: Omit<User, "password">;
 }
