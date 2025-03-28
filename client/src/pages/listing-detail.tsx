@@ -77,8 +77,9 @@ export default function ListingDetail() {
     data,
     isLoading,
     error,
-  } = useQuery<ListingDetailData>({ //Restored type
+  } = useQuery<ListingDetailData>({
     queryKey: [`/api/listings/${listingId}`],
+    queryFn: () => apiRequest("GET", `/api/listings/${listingId}`),
     enabled: !!listingId,
   });
 
