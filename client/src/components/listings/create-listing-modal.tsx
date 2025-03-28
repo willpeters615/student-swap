@@ -288,7 +288,16 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
                 <FormItem>
                   <FormLabel>Title</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. IKEA desk chair" {...field} />
+                    <Input 
+                      placeholder={
+                        selectedListingType === "item" 
+                          ? "e.g. IKEA desk chair, TI-84 Calculator" 
+                          : selectedListingType === "service"
+                            ? "e.g. Math Tutoring, Resume Review"
+                            : "e.g. Football Game Tickets, Campus Tour"
+                      } 
+                      {...field} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
