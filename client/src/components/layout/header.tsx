@@ -43,7 +43,10 @@ export default function Header() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setLocation(`/?search=${encodeURIComponent(searchQuery)}`);
+    // Only redirect if there's something to search for
+    if (searchQuery && searchQuery.trim()) {
+      setLocation(`/?search=${encodeURIComponent(searchQuery.trim())}`);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -67,12 +70,14 @@ export default function Header() {
               <input 
                 type="text" 
                 placeholder="Search items, services, experiences..." 
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
+                className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
               <Search className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
-              <button type="submit" className="sr-only">Search</button>
+              <button type="submit" className="absolute right-3 top-2 bg-primary text-white p-1 rounded-md">
+                <Search className="h-4 w-4" />
+              </button>
             </form>
           </div>
           
@@ -133,12 +138,14 @@ export default function Header() {
           <input 
             type="text" 
             placeholder="Search items, services, experiences..." 
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
           <Search className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
-          <button type="submit" className="sr-only">Search</button>
+          <button type="submit" className="absolute right-3 top-2 bg-primary text-white p-1 rounded-md">
+            <Search className="h-4 w-4" />
+          </button>
         </form>
       </div>
 

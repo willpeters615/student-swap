@@ -17,9 +17,9 @@ export function useListings() {
     filters 
   } = useContext(FilterContext);
 
-  // Get all listings
+  // Get all listings with search if available
   const { data: allListings, isLoading: isListingsLoading, error: listingsError } = useQuery<Listing[]>({
-    queryKey: ["/api/listings"],
+    queryKey: searchQuery ? ["/api/listings", { search: searchQuery }] : ["/api/listings"],
   });
 
   // Get user's favorites if logged in
