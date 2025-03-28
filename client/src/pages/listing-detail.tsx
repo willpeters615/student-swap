@@ -207,9 +207,9 @@ export default function ListingDetail() {
     );
   }
 
-  const { listing, owner } = data;
+  const { listing, owner } = data || { listing: null, owner: null };
   const fallbackImage = "https://via.placeholder.com/600x400?text=No+Image+Available";
-  const images = (listing.images && listing.images.length > 0) ? listing.images : [fallbackImage];
+  const images = (listing?.images && listing.images.length > 0) ? listing.images : [fallbackImage];
   const isOwner = user?.id === owner.id;
 
   const formatDate = (date: string | Date | null) => { //Restored type
