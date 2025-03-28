@@ -11,6 +11,7 @@ export default function FloatingButton() {
         <button 
           className="flex items-center justify-center w-14 h-14 rounded-full bg-accent text-white shadow-lg hover:bg-opacity-90 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent"
           onClick={openModal}
+          aria-label="Create Listing"
         >
           <Plus className="h-6 w-6" />
         </button>
