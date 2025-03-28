@@ -2,8 +2,13 @@ import { favorites, listings, messages, users } from "@shared/schema";
 import type { User, InsertUser, Listing, InsertListing, Favorite, InsertFavorite, Message, InsertMessage } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { eq, and, desc, or, asc } from "drizzle-orm";
+import postgres from "postgres";
 
 const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 // Interface for storage operations
 export interface IStorage {
@@ -35,7 +40,7 @@ export interface IStorage {
   markMessageAsRead(id: number): Promise<Message | undefined>;
   
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Express session store
 }
 
 export class MemStorage implements IStorage {
@@ -47,7 +52,7 @@ export class MemStorage implements IStorage {
   private listingCurrentId: number;
   private favoriteCurrentId: number;
   private messageCurrentId: number;
-  sessionStore: session.SessionStore;
+  sessionStore: any;
 
   constructor() {
     this.users = new Map();
@@ -246,4 +251,237 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class DatabaseStorage implements IStorage {
+  private db: ReturnType<typeof drizzle>;
+  sessionStore: any;
+
+  constructor() {
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL environment variable is not defined");
+    }
+
+    const client = postgres(process.env.DATABASE_URL);
+    this.db = drizzle(client);
+    
+    // Initialize session store
+    this.sessionStore = new PostgresSessionStore({
+      conObject: {
+        connectionString: process.env.DATABASE_URL,
+      },
+      createTableIfMissing: true,
+    });
+  }
+
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.username, username));
+    return result[0];
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.email, email));
+    return result[0];
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const result = await this.db.insert(users).values(user).returning();
+    return result[0];
+  }
+
+  // Listing methods
+  async getListing(id: number): Promise<Listing | undefined> {
+    const result = await this.db.select().from(listings).where(eq(listings.id, id));
+    return result[0];
+  }
+
+  async getListings(filter?: Partial<Listing>): Promise<Listing[]> {
+    if (!filter) {
+      return this.db.select().from(listings).orderBy(desc(listings.createdAt));
+    }
+
+    // Apply individual filters as we need to handle them conditionally
+    let result = await this.db.select().from(listings);
+    
+    if (filter.category && Array.isArray(filter.category)) {
+      result = result.filter(listing => 
+        filter.category!.includes(listing.category as any)
+      );
+    } else if (filter.category) {
+      result = result.filter(listing => 
+        listing.category === filter.category
+      );
+    }
+    
+    if (filter.type) {
+      result = result.filter(listing => 
+        listing.type === filter.type
+      );
+    }
+    
+    if (filter.condition) {
+      result = result.filter(listing => 
+        listing.condition === filter.condition
+      );
+    }
+    
+    if (filter.userId) {
+      result = result.filter(listing => 
+        listing.userId === filter.userId
+      );
+    }
+    
+    if (filter.status) {
+      result = result.filter(listing => 
+        listing.status === filter.status
+      );
+    }
+    
+    // Sort by createdAt descending
+    return result.sort((a, b) => 
+      (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
+    );
+  }
+
+  async getListingsByUserId(userId: number): Promise<Listing[]> {
+    return this.db
+      .select()
+      .from(listings)
+      .where(eq(listings.userId, userId))
+      .orderBy(desc(listings.createdAt));
+  }
+
+  async createListing(listing: InsertListing): Promise<Listing> {
+    const result = await this.db
+      .insert(listings)
+      .values({
+        ...listing,
+        status: "active",
+        images: listing.images || [],
+      })
+      .returning();
+    return result[0];
+  }
+
+  async updateListing(id: number, updatedFields: Partial<Listing>): Promise<Listing | undefined> {
+    const result = await this.db
+      .update(listings)
+      .set(updatedFields)
+      .where(eq(listings.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteListing(id: number): Promise<boolean> {
+    const result = await this.db.delete(listings).where(eq(listings.id, id));
+    return result.count > 0;
+  }
+
+  // Favorite methods
+  async getFavorite(userId: number, listingId: number): Promise<Favorite | undefined> {
+    const result = await this.db
+      .select()
+      .from(favorites)
+      .where(
+        and(
+          eq(favorites.userId, userId),
+          eq(favorites.listingId, listingId)
+        )
+      );
+    return result[0];
+  }
+
+  async getFavoritesByUserId(userId: number): Promise<Favorite[]> {
+    return this.db
+      .select()
+      .from(favorites)
+      .where(eq(favorites.userId, userId))
+      .orderBy(desc(favorites.createdAt));
+  }
+
+  async createFavorite(favorite: InsertFavorite): Promise<Favorite> {
+    const result = await this.db.insert(favorites).values(favorite).returning();
+    return result[0];
+  }
+
+  async deleteFavorite(userId: number, listingId: number): Promise<boolean> {
+    const result = await this.db
+      .delete(favorites)
+      .where(
+        and(
+          eq(favorites.userId, userId),
+          eq(favorites.listingId, listingId)
+        )
+      );
+    return result.count > 0;
+  }
+
+  // Message methods
+  async getMessage(id: number): Promise<Message | undefined> {
+    const result = await this.db.select().from(messages).where(eq(messages.id, id));
+    return result[0];
+  }
+
+  async getMessagesByUserId(userId: number): Promise<Message[]> {
+    return this.db
+      .select()
+      .from(messages)
+      .where(
+        or(
+          eq(messages.senderId, userId),
+          eq(messages.receiverId, userId)
+        )
+      )
+      .orderBy(asc(messages.createdAt));
+  }
+
+  async getMessagesBetweenUsers(userId1: number, userId2: number, listingId?: number): Promise<Message[]> {
+    // Get all messages first
+    const allMessages = await this.db.select().from(messages);
+    
+    // Filter in memory
+    let result = allMessages.filter(message => {
+      const userMatch = 
+        (message.senderId === userId1 && message.receiverId === userId2) ||
+        (message.senderId === userId2 && message.receiverId === userId1);
+        
+      if (listingId) {
+        return userMatch && message.listingId === listingId;
+      }
+      
+      return userMatch;
+    });
+    
+    // Sort by createdAt ascending
+    return result.sort((a, b) => 
+      (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0)
+    );
+  }
+
+  async createMessage(message: InsertMessage): Promise<Message> {
+    const result = await this.db
+      .insert(messages)
+      .values({ ...message, read: false })
+      .returning();
+    return result[0];
+  }
+
+  async markMessageAsRead(id: number): Promise<Message | undefined> {
+    const result = await this.db
+      .update(messages)
+      .set({ read: true })
+      .where(eq(messages.id, id))
+      .returning();
+    return result[0];
+  }
+}
+
+// Use database storage
+export const storage = new DatabaseStorage();
+
+// Use in-memory storage for development
+// export const storage = new MemStorage();
