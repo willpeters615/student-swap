@@ -207,9 +207,31 @@ export default function ListingDetail() {
     );
   }
 
-  const { listing, owner } = data || { listing: null, owner: null };
+  if (!data || !data.listing || !data.owner) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          <Card className="p-8 text-center">
+            <CardContent>
+              <h1 className="text-2xl font-bold text-red-500 mb-4">Listing Not Found</h1>
+              <p className="text-gray-600 mb-6">
+                The listing you're looking for doesn't exist or has been removed.
+              </p>
+              <Link href="/">
+                <Button>Browse other listings</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </main>
+        <MobileNav />
+      </div>
+    );
+  }
+
+  const { listing, owner } = data;
   const fallbackImage = "https://via.placeholder.com/600x400?text=No+Image+Available";
-  const images = (listing?.images && listing.images.length > 0) ? listing.images : [fallbackImage];
+  const images = (listing.images && listing.images.length > 0) ? listing.images : [fallbackImage];
   const isOwner = user?.id === owner.id;
 
   const formatDate = (date: string | Date | null) => { //Restored type
