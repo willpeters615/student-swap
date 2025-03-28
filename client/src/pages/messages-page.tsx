@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWebSocket } from "@/hooks/use-websocket";
 import Header from "@/components/layout/header";
 import MobileNav from "@/components/layout/mobile-nav";
+import { ChatInterface } from "@/components/messages/chat-interface";
 import {
   Card,
   CardContent,
@@ -14,13 +14,11 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Send } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 // Types for conversation and message
 interface Conversation {
@@ -29,6 +27,8 @@ interface Conversation {
     username: string;
     email: string;
     university: string;
+    verified?: boolean | null;
+    createdAt?: Date | null;
   };
   listing: {
     id: number;
@@ -59,88 +59,31 @@ interface Message {
 
 export default function MessagesPage() {
   const { user } = useAuth();
-  const { toast } = useToast();
+  const { onlineUsers } = useWebSocket();
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
-  const [messageContent, setMessageContent] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Responsive behavior
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   // Fetch conversations
   const { data: conversations, isLoading: isLoadingConversations } = useQuery<Conversation[]>({
     queryKey: ["/api/messages"],
     enabled: !!user,
+    refetchInterval: 10000, // Refresh every 10 seconds as fallback
   });
-
-  // Fetch messages for active conversation
-  const { data: messages, isLoading: isLoadingMessages } = useQuery<Message[]>({
-    queryKey: [
-      `/api/messages/${activeConversation?.otherUser.id}/${activeConversation?.listing.id}`,
-    ],
-    enabled: !!activeConversation,
-  });
-
-  // Send message mutation
-  const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
-      if (!activeConversation) return;
-      
-      const message = {
-        receiverId: activeConversation.otherUser.id,
-        listingId: activeConversation.listing.id,
-        content,
-      };
-      
-      await apiRequest("POST", "/api/messages", message);
-    },
-    onSuccess: () => {
-      setMessageContent("");
-      // Refetch messages and conversations
-      queryClient.invalidateQueries({ 
-        queryKey: [
-          `/api/messages/${activeConversation?.otherUser.id}/${activeConversation?.listing.id}`,
-        ] 
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/messages"] });
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to send message",
-        description: error.message || "Please try again",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!messageContent.trim() || !activeConversation) return;
-    
-    try {
-      await sendMessageMutation.mutateAsync(messageContent);
-    } catch (error) {
-      console.error("Error sending message:", error);
-    }
-  };
-
-  // Format date for display
-  const formatMessageDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    
-    // If today, show time
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    
-    // If this week, show day
-    const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysDiff < 7) {
-      return date.toLocaleDateString([], { weekday: 'short' }) + ' ' + 
-             date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    
-    // Otherwise show date
-    return date.toLocaleDateString();
-  };
 
   // Format date for conversation list
   const formatConversationDate = (dateString: string) => {
@@ -165,16 +108,6 @@ export default function MessagesPage() {
   const truncateText = (text: string, maxLength: number) => {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
-  };
-
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
   };
 
   return (
@@ -337,121 +270,28 @@ export default function MessagesPage() {
             </div>
             
             {/* Message thread */}
-            <div className="md:col-span-2 flex flex-col h-full">
+            <div className={`md:col-span-2 flex flex-col h-full ${activeConversation && isMobileView ? 'fixed inset-0 z-50 bg-white' : ''}`}>
+              {isMobileView && activeConversation && (
+                <div className="md:hidden p-2 bg-background border-b">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setActiveConversation(null)}
+                    className="flex items-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2"><path d="m15 18-6-6 6-6"></path></svg>
+                    Back to conversations
+                  </Button>
+                </div>
+              )}
+              
               {activeConversation ? (
-                <>
-                  {/* Conversation header */}
-                  <div className="p-4 border-b flex items-center justify-between">
-                    <div className="flex items-center">
-                      <Avatar className="h-10 w-10 mr-3">
-                        <AvatarImage src="" alt={activeConversation.otherUser.username} />
-                        <AvatarFallback>
-                          {activeConversation.otherUser.username.substring(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className="font-medium">{activeConversation.otherUser.username}</h3>
-                        <p className="text-xs text-gray-500">{activeConversation.otherUser.university}</p>
-                      </div>
-                    </div>
-                    
-                    <Link href={`/listings/${activeConversation.listing.id}`}>
-                      <Button variant="outline" size="sm">View Listing</Button>
-                    </Link>
-                  </div>
-                  
-                  {/* Listing info */}
-                  <div className="p-4 border-b bg-gray-50">
-                    <div className="flex items-center">
-                      <div 
-                        className="h-12 w-12 rounded bg-center bg-cover mr-3" 
-                        style={{ 
-                          backgroundImage: `url(${
-                            activeConversation.listing.images && activeConversation.listing.images.length > 0
-                              ? activeConversation.listing.images[0]
-                              : 'https://via.placeholder.com/100?text=No+Image'
-                          })` 
-                        }}
-                      />
-                      <div>
-                        <h4 className="font-medium">{truncateText(activeConversation.listing.title, 40)}</h4>
-                        <p className="text-sm text-primary font-medium">
-                          {formatCurrency(activeConversation.listing.price)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Messages */}
-                  <ScrollArea className="flex-1 p-4">
-                    {isLoadingMessages ? (
-                      <div className="flex justify-center items-center h-32">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                      </div>
-                    ) : messages && messages.length > 0 ? (
-                      <div className="space-y-4">
-                        {messages.map((message) => {
-                          const isCurrentUser = message.senderId === user?.id;
-                          
-                          return (
-                            <div 
-                              key={message.id} 
-                              className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div 
-                                className={`max-w-[75%] rounded-lg p-3 ${
-                                  isCurrentUser 
-                                    ? 'bg-primary text-white rounded-tr-none' 
-                                    : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                                }`}
-                              >
-                                <p className="text-sm">{message.content}</p>
-                                <p 
-                                  className={`text-xs mt-1 ${
-                                    isCurrentUser ? 'text-primary-foreground/70' : 'text-gray-500'
-                                  }`}
-                                >
-                                  {formatMessageDate(message.createdAt)}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="h-full flex flex-col justify-center items-center text-center text-gray-500">
-                        <p>Start the conversation with {activeConversation.otherUser.username}</p>
-                        <p className="text-sm mt-1">
-                          Ask questions about {truncateText(activeConversation.listing.title, 30)}
-                        </p>
-                      </div>
-                    )}
-                  </ScrollArea>
-                  
-                  {/* Message input */}
-                  <div className="p-4 border-t">
-                    <form onSubmit={handleSendMessage} className="flex gap-2">
-                      <Textarea 
-                        placeholder={`Message ${activeConversation.otherUser.username}...`}
-                        className="resize-none min-h-[60px]"
-                        value={messageContent}
-                        onChange={(e) => setMessageContent(e.target.value)}
-                      />
-                      <Button 
-                        type="submit" 
-                        size="icon" 
-                        className="h-[60px] w-[60px]"
-                        disabled={!messageContent.trim() || sendMessageMutation.isPending}
-                      >
-                        {sendMessageMutation.isPending ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                          <Send className="h-5 w-5" />
-                        )}
-                      </Button>
-                    </form>
-                  </div>
-                </>
+                <ChatInterface 
+                  otherUser={activeConversation.otherUser}
+                  listingId={activeConversation.listing.id}
+                  listingTitle={activeConversation.listing.title}
+                  onBack={() => setActiveConversation(null)} 
+                />
               ) : (
                 <div className="h-full flex flex-col justify-center items-center p-8 text-center text-gray-500">
                   <h3 className="text-lg font-medium mb-2">Select a conversation</h3>

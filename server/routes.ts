@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertListingSchema, insertFavoriteSchema, insertMessageSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth } from "./auth";
+import { setupWebSocketServer, getWebSocketServer } from "./websocket";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes
@@ -385,5 +386,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  
+  // Initialize WebSocket server
+  setupWebSocketServer(httpServer);
+  
   return httpServer;
 }
