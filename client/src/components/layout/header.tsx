@@ -115,7 +115,7 @@ export default function Header() {
                   </DropdownMenu>
                 </div>
                 <Button className="ml-4 bg-primary hover:bg-primary/90 text-white" onClick={openCreateModal}>
-                  Sell Item
+                  Create Listing
                 </Button>
               </>
             ) : (
