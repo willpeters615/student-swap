@@ -1,6 +1,6 @@
-import { useContext, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { FilterContext } from "@/contexts/filter-context";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { 
   itemCategories, 
   serviceCategories, 
@@ -9,9 +9,12 @@ import {
   ListingType 
 } from "@shared/schema";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function CategoryFilters() {
   const { activeCategory, setActiveCategory, activeListingType, setActiveListingType } = useContext(FilterContext);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollButtons, setShowScrollButtons] = useState(true);
   
   // Get the categories for the currently selected listing type
   const currentCategories = getCategoriesByType(activeListingType);
@@ -19,6 +22,41 @@ export default function CategoryFilters() {
   const handleTypeChange = (value: string) => {
     setActiveListingType(value as ListingType);
     setActiveCategory("All"); // Reset category when changing type
+    
+    // Scroll to start when changing type
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+  };
+  
+  const handleCategoryClick = (category: string) => {
+    setActiveCategory(category);
+    
+    // Find the button element for this category and scroll it into view
+    if (scrollContainerRef.current) {
+      const buttons = scrollContainerRef.current.querySelectorAll('button');
+      const index = ["All", ...currentCategories].findIndex(c => c === category);
+      
+      if (index >= 0 && buttons[index]) {
+        buttons[index].scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      }
+    }
+  };
+
+  const scrollLeft = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: -200, behavior: 'smooth' });
+    }
+  };
+
+  const scrollRight = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+    }
   };
 
   return (
@@ -33,36 +71,73 @@ export default function CategoryFilters() {
           </TabsList>
         </Tabs>
         
-        {/* Category Scrollable List */}
-        <ScrollArea className="whitespace-nowrap">
-          <div className="flex space-x-6">
-            <button 
-              className={`px-3 py-2 text-sm font-medium ${
-                activeCategory === "All" 
-                  ? "text-primary border-b-2 border-primary" 
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-              onClick={() => setActiveCategory("All")}
-            >
-              All {activeListingType === "item" ? "Items" : 
-                  activeListingType === "service" ? "Services" : "Experiences"}
-            </button>
-            
-            {currentCategories.map((category) => (
+        {/* Category Scrollable List with Scroll Indicators */}
+        <div className="relative">
+          {showScrollButtons && (
+            <>
               <button 
-                key={category}
-                className={`px-3 py-2 text-sm font-medium ${
-                  activeCategory === category 
+                onClick={scrollLeft}
+                className="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/80 rounded-full p-1 shadow-md hover:bg-white hidden sm:flex items-center justify-center"
+                aria-label="Scroll left"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button 
+                onClick={scrollRight}
+                className="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-white/80 rounded-full p-1 shadow-md hover:bg-white hidden sm:flex items-center justify-center"
+                aria-label="Scroll right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          
+          <div className="overflow-x-auto scrollbar-hide" ref={scrollContainerRef}>
+            <div className="flex space-x-6 py-2 px-2 min-w-max overflow-x-scroll touch-pan-x snap-x">
+              <button 
+                className={`px-3 py-2 text-sm font-medium snap-start ${
+                  activeCategory === "All" 
                     ? "text-primary border-b-2 border-primary" 
                     : "text-gray-500 hover:text-gray-700"
                 }`}
-                onClick={() => setActiveCategory(category)}
+                onClick={() => handleCategoryClick("All")}
               >
-                {category}
+                All {activeListingType === "item" ? "Items" : 
+                    activeListingType === "service" ? "Services" : "Experiences"}
               </button>
-            ))}
+              
+              {currentCategories.map((category) => (
+                <button 
+                  key={category}
+                  className={`px-3 py-2 text-sm font-medium snap-start ${
+                    activeCategory === category 
+                      ? "text-primary border-b-2 border-primary" 
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                  onClick={() => handleCategoryClick(category)}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
           </div>
-        </ScrollArea>
+          
+          {/* Visual indicator for scrollable content with dot pagination */}
+          <div className="mt-1 flex justify-center">
+            <div className="flex space-x-1.5 px-2 py-1">
+              {["All", ...currentCategories].map((category, index) => (
+                <div 
+                  key={category}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    activeCategory === category 
+                      ? "w-4 bg-primary" 
+                      : "w-1.5 bg-gray-300"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
