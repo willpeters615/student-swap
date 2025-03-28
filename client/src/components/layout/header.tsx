@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { MessageCircle, Heart, Search, LogOut, User } from "lucide-react";
+import { MessageCircle, Heart, Search, LogOut, User, Home } from "lucide-react";
 
 export default function Header() {
   const [location, setLocation] = useState("/");
@@ -80,6 +80,9 @@ export default function Header() {
           <div className="hidden sm:flex sm:items-center">
             {user ? (
               <>
+                <Link href="/">
+                  <Home className="h-6 w-6 text-gray-600 hover:text-primary transition-colors mx-3 cursor-pointer" />
+                </Link>
                 <Link href="/messages">
                   <MessageCircle className="h-6 w-6 text-gray-600 hover:text-primary transition-colors mx-3 cursor-pointer" />
                 </Link>

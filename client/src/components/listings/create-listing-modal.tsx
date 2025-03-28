@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,10 +28,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertListingSchema, listingCategories, listingConditions } from "@shared/schema";
-import { Loader2, Upload, XCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { 
+  insertListingSchema, 
+  itemCategories, 
+  serviceCategories, 
+  experienceCategories, 
+  listingTypes,
+  listingConditions,
+  getCategoriesByType,
+  ListingType
+} from "@shared/schema";
+import { 
+  Loader2, 
+  Upload, 
+  XCircle, 
+  Calendar
+} from "lucide-react";
+import { format } from "date-fns";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface CreateListingModalProps {
   isOpen: boolean;
@@ -44,13 +63,18 @@ const MAX_IMAGES = 5;
 
 const createListingSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
+  type: z.enum(listingTypes),
   price: z.string().refine((val) => !isNaN(Number(val)), {
     message: "Price must be a number",
   }),
   category: z.string().min(1, "Please select a category"),
-  condition: z.string().min(1, "Please select a condition"),
+  // Condition is only required for items
+  condition: z.string().optional(),
   description: z.string().min(10, "Description must be at least 10 characters"),
   location: z.string().optional(),
+  // These fields are used for services and experiences
+  date: z.date().optional(),
+  duration: z.string().optional(),
 });
 
 type CreateListingFormData = z.infer<typeof createListingSchema>;
@@ -60,11 +84,14 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedListingType, setSelectedListingType] = useState<ListingType>("item");
+  const [currentCategories, setCurrentCategories] = useState<readonly string[]>(itemCategories);
 
   const form = useForm<CreateListingFormData>({
     resolver: zodResolver(createListingSchema),
     defaultValues: {
       title: "",
+      type: "item",
       price: "",
       category: "",
       condition: "",
@@ -72,6 +99,18 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
       location: "On Campus",
     },
   });
+  
+  // Update categories when listing type changes
+  useEffect(() => {
+    setCurrentCategories(getCategoriesByType(selectedListingType));
+    // Reset the category field when type changes
+    form.setValue("category", "");
+    
+    // Reset condition field when not an item
+    if (selectedListingType !== "item") {
+      form.setValue("condition", "");
+    }
+  }, [selectedListingType, form]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -153,16 +192,35 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
     try {
       setIsSubmitting(true);
 
-      // Format data for API
-      const listingData = {
+      // Format data for API based on type
+      const baseListingData = {
         title: data.title,
         price: parseInt(data.price),
         category: data.category,
-        condition: data.condition,
+        type: data.type,
         description: data.description,
         location: data.location || "On Campus",
         images: uploadedImages,
       };
+
+      // Add type-specific fields based on listing type
+      let listingData;
+      if (data.type === "item" && data.condition) {
+        // For furniture items
+        listingData = {
+          ...baseListingData,
+          condition: data.condition
+        };
+      } else if ((data.type === "service" || data.type === "experience") && data.date) {
+        // For services/experiences
+        listingData = {
+          ...baseListingData,
+          date: data.date,
+          duration: data.duration || ""
+        };
+      } else {
+        listingData = baseListingData;
+      }
 
       // Submit to API
       await apiRequest("POST", "/api/listings", listingData);
@@ -170,7 +228,7 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
       // Show success message
       toast({
         title: "Listing created",
-        description: "Your listing has been created successfully.",
+        description: `Your ${data.type} listing has been created successfully.`,
       });
 
       // Invalidate listings query to refresh the list
@@ -179,6 +237,7 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
       // Reset form and close modal
       form.reset();
       setUploadedImages([]);
+      setSelectedListingType("item");
       onClose();
     } catch (error) {
       console.error("Error creating listing:", error);
@@ -198,9 +257,27 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
         <DialogHeader>
           <DialogTitle>Create New Listing</DialogTitle>
           <DialogDescription>
-            List your furniture item for sale to your university community.
+            List items, services, or experiences for your university community.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Listing Type Tabs */}
+        <div className="mb-4">
+          <FormLabel className="mb-2 block">What are you offering?</FormLabel>
+          <Tabs 
+            value={selectedListingType} 
+            onValueChange={(value) => {
+              setSelectedListingType(value as ListingType);
+              form.setValue("type", value as ListingType);
+            }}
+          >
+            <TabsList className="grid grid-cols-3">
+              <TabsTrigger value="item">Item</TabsTrigger>
+              <TabsTrigger value="service">Service</TabsTrigger>
+              <TabsTrigger value="experience">Experience</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -246,7 +323,7 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {listingCategories.map((category) => (
+                        {currentCategories.map((category) => (
                           <SelectItem key={category} value={category}>
                             {category}
                           </SelectItem>
@@ -258,30 +335,32 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="condition"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Condition</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select condition" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {listingConditions.map((condition) => (
-                          <SelectItem key={condition} value={condition}>
-                            {condition}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {selectedListingType === "item" && (
+                <FormField
+                  control={form.control}
+                  name="condition"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Condition</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select condition" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {listingConditions.map((condition) => (
+                            <SelectItem key={condition} value={condition}>
+                              {condition}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             <FormField
@@ -292,7 +371,13 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Describe your item (age, dimensions, any damages, etc.)"
+                      placeholder={
+                        selectedListingType === "item" 
+                          ? "Describe your item (age, dimensions, any damages, etc.)"
+                          : selectedListingType === "service"
+                            ? "Describe the service you're offering (your experience, what's included, etc.)"
+                            : "Describe this experience (what's included, requirements, etc.)"
+                      }
                       rows={3}
                       {...field}
                     />
@@ -319,6 +404,71 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
                 </FormItem>
               )}
             />
+
+            {/* Date field for services and experiences */}
+            {selectedListingType !== "item" && (
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant={"outline"}
+                              className={cn(
+                                "pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <Calendar className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarComponent
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < new Date(new Date().setHours(0, 0, 0, 0))
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="duration"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Duration</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={selectedListingType === "service" ? "e.g. 1 hour" : "e.g. 3 hours"}
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             <div>
               <FormLabel>Photos (up to 5)</FormLabel>
