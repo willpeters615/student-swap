@@ -1,13 +1,19 @@
 import { useContext, useState } from "react";
-import { FilterContext } from "@/contexts/filter-context";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
-import { listingConditions, listingCategories } from "@shared/schema";
+import { 
+  listingConditions, 
+  getCategoriesByType
+} from "@shared/schema";
+import { FilterContext } from "@/contexts/filter-context";
 import { X } from "lucide-react";
+
+// Get the DistanceOption type from context
+type DistanceOption = "less_than_1" | "1_to_3" | "3_to_5" | "any";
 
 interface FilterModalProps {
   isOpen: boolean;
@@ -15,14 +21,14 @@ interface FilterModalProps {
 }
 
 export default function FilterModal({ isOpen, onClose }: FilterModalProps) {
-  const { filters, setFilters } = useContext(FilterContext);
+  const { filters, setFilters, activeListingType } = useContext(FilterContext);
   
   const [localFilters, setLocalFilters] = useState({
     minPrice: filters.minPrice || "",
     maxPrice: filters.maxPrice || "",
     conditions: [...filters.conditions],
     categories: [...filters.categories],
-    distance: filters.distance || "any"
+    distance: filters.distance || "any" as DistanceOption
   });
 
   const handleApply = () => {
@@ -42,7 +48,7 @@ export default function FilterModal({ isOpen, onClose }: FilterModalProps) {
       maxPrice: "",
       conditions: [],
       categories: [],
-      distance: "any"
+      distance: "any" as DistanceOption
     });
   };
 
@@ -77,6 +83,9 @@ export default function FilterModal({ isOpen, onClose }: FilterModalProps) {
       }
     });
   };
+
+  // Only show condition filter for item listings
+  const showConditionFilter = activeListingType === "item";
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -115,25 +124,27 @@ export default function FilterModal({ isOpen, onClose }: FilterModalProps) {
             </div>
           </div>
           
-          <div className="border-t pt-4 space-y-3">
-            <h4 className="font-medium">Condition</h4>
-            <div className="space-y-2">
-              {listingConditions.map((condition) => (
-                <Label key={condition} className="flex items-center space-x-2">
-                  <Checkbox 
-                    checked={localFilters.conditions.includes(condition)} 
-                    onCheckedChange={() => toggleCondition(condition)}
-                  />
-                  <span>{condition}</span>
-                </Label>
-              ))}
+          {showConditionFilter && (
+            <div className="border-t pt-4 space-y-3">
+              <h4 className="font-medium">Condition</h4>
+              <div className="space-y-2">
+                {listingConditions.map((condition) => (
+                  <Label key={condition} className="flex items-center space-x-2">
+                    <Checkbox 
+                      checked={localFilters.conditions.includes(condition)} 
+                      onCheckedChange={() => toggleCondition(condition)}
+                    />
+                    <span>{condition}</span>
+                  </Label>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           
           <div className="border-t pt-4 space-y-3">
             <h4 className="font-medium">Category</h4>
             <div className="grid grid-cols-2 gap-2">
-              {listingCategories.map((category) => (
+              {getCategoriesByType(activeListingType).map((category) => (
                 <Label key={category} className="flex items-center space-x-2">
                   <Checkbox 
                     checked={localFilters.categories.includes(category)} 
@@ -149,7 +160,7 @@ export default function FilterModal({ isOpen, onClose }: FilterModalProps) {
             <h4 className="font-medium">Distance</h4>
             <RadioGroup 
               value={localFilters.distance} 
-              onValueChange={(value) => setLocalFilters(prev => ({ ...prev, distance: value }))}
+              onValueChange={(value: DistanceOption) => setLocalFilters(prev => ({ ...prev, distance: value }))}
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="less_than_1" id="less_than_1" />

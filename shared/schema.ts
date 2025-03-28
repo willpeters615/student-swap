@@ -17,13 +17,17 @@ export const listings = pgTable("listings", {
   title: text("title").notNull(),
   description: text("description"),
   price: integer("price").notNull(),
-  condition: text("condition").notNull(),
+  condition: text("condition"),
   category: text("category").notNull(),
+  type: text("type").notNull().default("item"),  // 'item', 'service', or 'experience'
   images: text("images").array(),
   location: text("location").default("On Campus"),
   userId: integer("user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   status: text("status").default("active"),
+  // For services & experiences
+  date: timestamp("date"),
+  duration: text("duration"),
 });
 
 export const favorites = pgTable("favorites", {
@@ -57,9 +61,12 @@ export const insertListingSchema = createInsertSchema(listings).pick({
   price: true,
   condition: true,
   category: true,
+  type: true,
   images: true,
   location: true,
   userId: true,
+  date: true,
+  duration: true,
 });
 
 export const insertFavoriteSchema = createInsertSchema(favorites).pick({
@@ -87,9 +94,69 @@ export type InsertFavorite = z.infer<typeof insertFavoriteSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
-// Listing conditions and categories
-export const listingConditions = ["New", "Like New", "Good", "Fair"] as const;
-export const listingCategories = ["Chairs", "Desks", "Sofas", "Beds", "Storage", "Lamps", "Tables", "Other"] as const;
+// Listing types, conditions and categories
+export const listingTypes = ["item", "service", "experience"] as const;
 
+export const listingConditions = ["New", "Like New", "Good", "Fair"] as const;
+
+// Item categories
+export const itemCategories = ["Chairs", "Desks", "Sofas", "Beds", "Storage", "Lamps", "Tables", "Other"] as const;
+
+// Service categories
+export const serviceCategories = [
+  // Academic Services
+  "Tutoring", 
+  "Essay Editing", 
+  "Note-taking", 
+  "Research Assistance", 
+  "Language Translation", 
+  "Coding Help",
+  "Design Services",
+  // Personal Services
+  "Cooking Lessons",
+  "Fitness Training",
+  "Music Lessons",
+  "Photography",
+  "Graphic Design",
+  "Moving Assistance",
+  "Tech Support",
+  "Cleaning Services",
+  "Video Editing",
+  "Other Services"
+] as const;
+
+// Experience categories
+export const experienceCategories = [
+  "Event Tickets",
+  "Sports Games",
+  "Concerts",
+  "Campus Events",
+  "Local Performances",
+  "Workshop Passes",
+  "Club Events",
+  "Travel Experiences",
+  "Group Activities",
+  "Dining Experiences",
+  "Other Experiences"
+] as const;
+
+// Helper function to get categories based on type
+export const getCategoriesByType = (type: ListingType) => {
+  switch (type) {
+    case "item":
+      return itemCategories;
+    case "service":
+      return serviceCategories;
+    case "experience":
+      return experienceCategories;
+    default:
+      return itemCategories;
+  }
+};
+
+export type ListingType = typeof listingTypes[number];
 export type ListingCondition = typeof listingConditions[number];
-export type ListingCategory = typeof listingCategories[number];
+export type ItemCategory = typeof itemCategories[number];
+export type ServiceCategory = typeof serviceCategories[number];
+export type ExperienceCategory = typeof experienceCategories[number];
+export type ListingCategory = ItemCategory | ServiceCategory | ExperienceCategory;

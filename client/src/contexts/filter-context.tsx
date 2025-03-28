@@ -1,5 +1,12 @@
 import { createContext, ReactNode, useState } from "react";
-import { ListingCategory, ListingCondition, listingCategories } from "@shared/schema";
+import { 
+  ListingCategory, 
+  ListingCondition, 
+  ListingType,
+  itemCategories, 
+  serviceCategories, 
+  experienceCategories 
+} from "@shared/schema";
 
 type ViewMode = "grid" | "list";
 type SortOption = "newest" | "price_asc" | "price_desc";
@@ -12,7 +19,9 @@ interface FilterContextType {
   sortBy: SortOption;
   setSortBy: (option: SortOption) => void;
   
-  // Category filter
+  // Listing type and category filters
+  activeListingType: ListingType;
+  setActiveListingType: (type: ListingType) => void;
   activeCategory: string;
   setActiveCategory: (category: string) => void;
   
@@ -32,6 +41,8 @@ export const FilterContext = createContext<FilterContextType>({
   setViewMode: () => {},
   sortBy: "newest",
   setSortBy: () => {},
+  activeListingType: "item",
+  setActiveListingType: () => {},
   activeCategory: "All",
   setActiveCategory: () => {},
   filters: {
@@ -51,6 +62,7 @@ interface FilterProviderProps {
 export function FilterProvider({ children }: FilterProviderProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
+  const [activeListingType, setActiveListingType] = useState<ListingType>("item");
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [filters, setFilters] = useState({
     minPrice: "",
@@ -67,6 +79,8 @@ export function FilterProvider({ children }: FilterProviderProps) {
         setViewMode,
         sortBy,
         setSortBy,
+        activeListingType,
+        setActiveListingType,
         activeCategory,
         setActiveCategory,
         filters,
