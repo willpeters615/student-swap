@@ -100,7 +100,22 @@ export const listingTypes = ["item", "service", "experience"] as const;
 export const listingConditions = ["New", "Like New", "Good", "Fair"] as const;
 
 // Item categories
-export const itemCategories = ["Chairs", "Desks", "Sofas", "Beds", "Storage", "Lamps", "Tables", "Other"] as const;
+export const itemCategories = [
+  // Furniture
+  "Chairs", 
+  "Desks", 
+  "Sofas", 
+  "Beds", 
+  "Storage", 
+  "Lamps", 
+  "Tables", 
+  // Other categories
+  "Clothing and Accessories",
+  "School Supplies",
+  "Sports Equipment",
+  "Dining Credits",
+  "Other"
+] as const;
 
 // Service categories
 export const serviceCategories = [
@@ -122,7 +137,8 @@ export const serviceCategories = [
   "Tech Support",
   "Cleaning Services",
   "Video Editing",
-  "Other Services"
+  // Other
+  "Other"
 ] as const;
 
 // Experience categories
@@ -137,7 +153,7 @@ export const experienceCategories = [
   "Travel Experiences",
   "Group Activities",
   "Dining Experiences",
-  "Other Experiences"
+  "Other"
 ] as const;
 
 // Helper function to get categories based on type
