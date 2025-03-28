@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute } from "wouter";
 import { Listing, User } from "@shared/schema";
@@ -89,16 +89,18 @@ export default function ListingDetail() {
   });
 
   // Check if listing is in user's favorites
-  const { data: favorites } = useQuery({
+  const { data: favorites } = useQuery<any[]>({
     queryKey: ["/api/favorites"],
     enabled: !!user,
-    onSuccess: (favData: any[]) => {
-      if (favData) {
-        const isFav = favData.some((fav) => fav.listingId === listingId);
-        setIsFavorite(isFav);
-      }
-    },
   });
+  
+  // Update favorite status when favorites data changes
+  useEffect(() => {
+    if (favorites) {
+      const isFav = favorites.some((fav) => fav.listingId === listingId);
+      setIsFavorite(isFav);
+    }
+  }, [favorites, listingId]);
 
   // Toggle favorite status
   const toggleFavorite = async () => {
@@ -265,7 +267,7 @@ export default function ListingDetail() {
   const { listing, owner } = data;
   const fallbackImage = "https://via.placeholder.com/600x400?text=No+Image+Available";
   // Safely handle images - ensure it's never undefined
-  const images = (listing.images && Array.isArray(listing.images) && listing.images.length > 0)
+  const images = (listing && listing.images && Array.isArray(listing.images) && listing.images.length > 0)
     ? listing.images 
     : [fallbackImage];
 
