@@ -12,6 +12,7 @@ export function useListings() {
   const { user } = useAuth();
   const { 
     activeCategory,
+    activeListingType,
     sortBy, 
     filters 
   } = useContext(FilterContext);
@@ -33,8 +34,13 @@ export function useListings() {
 
     // Start with all listings
     let filteredListings = [...allListings];
+    
+    // First filter by listing type
+    filteredListings = filteredListings.filter(
+      listing => listing.type === activeListingType
+    );
 
-    // Filter by category if not "All"
+    // Then filter by category if not "All"
     if (activeCategory !== "All") {
       filteredListings = filteredListings.filter(
         listing => listing.category === activeCategory
@@ -82,14 +88,14 @@ export function useListings() {
     // Filter by conditions
     if (filters.conditions.length > 0) {
       filteredListings = filteredListings.filter(
-        listing => filters.conditions.includes(listing.condition)
+        listing => listing.condition && filters.conditions.includes(listing.condition)
       );
     }
 
     // Filter by categories
     if (filters.categories.length > 0) {
       filteredListings = filteredListings.filter(
-        listing => filters.categories.includes(listing.category)
+        listing => listing.category && filters.categories.includes(listing.category)
       );
     }
 
@@ -107,7 +113,7 @@ export function useListings() {
           return dateB - dateA;
         });
     }
-  }, [allListings, activeCategory, searchQuery, filters, sortBy]);
+  }, [allListings, activeListingType, activeCategory, searchQuery, filters, sortBy]);
 
   return {
     listings,
