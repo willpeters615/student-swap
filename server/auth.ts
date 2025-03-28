@@ -54,16 +54,32 @@ export function setupAuth(app: Express) {
         let user;
         if (isEmail) {
           user = await storage.getUserByEmail(username);
+          if (!user) {
+            console.log(`No user found with email: ${username}`);
+          }
         } else {
           user = await storage.getUserByUsername(username);
+          if (!user) {
+            console.log(`No user found with username: ${username}`);
+            // Try as email anyway in case user entered email in username field
+            user = await storage.getUserByEmail(username);
+          }
         }
         
-        if (!user || !(await comparePasswords(password, user.password))) {
+        if (!user) {
+          console.log("No user found");
+          return done(null, false, { message: "Invalid username or password" });
+        }
+        
+        const passwordMatches = await comparePasswords(password, user.password);
+        if (!passwordMatches) {
+          console.log("Password does not match");
           return done(null, false, { message: "Invalid username or password" });
         }
         
         return done(null, user);
       } catch (error) {
+        console.error("Login error:", error);
         return done(error);
       }
     }),
@@ -153,17 +169,33 @@ export function setupAuth(app: Express) {
 
   // Login endpoint
   app.post("/api/login", (req, res, next) => {
+    console.log("Login attempt with:", { 
+      username: req.body.username,
+      passwordProvided: !!req.body.password
+    });
+    
     passport.authenticate("local", (err, user, info) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("Login authentication error:", err);
+        return next(err);
+      }
+      
       if (!user) {
+        console.log("Authentication failed:", info?.message || "No info message");
         return res.status(401).json({ error: info?.message || "Invalid credentials" });
       }
       
+      console.log("User authenticated successfully:", user.username);
+      
       req.login(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
+        if (loginErr) {
+          console.error("Login session error:", loginErr);
+          return next(loginErr);
+        }
         
         // Return user without password
         const { password, ...safeUser } = user;
+        console.log("Login successful for:", safeUser.username);
         res.json(safeUser);
       });
     })(req, res, next);
