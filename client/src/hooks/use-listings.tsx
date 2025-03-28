@@ -47,14 +47,26 @@ export function useListings() {
       );
     }
 
-    // Filter by search query
+    // Enhanced search query filtering
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filteredListings = filteredListings.filter(
-        listing => 
-          listing.title.toLowerCase().includes(query) || 
-          (listing.description && listing.description.toLowerCase().includes(query))
-      );
+      const searchTerms = searchQuery.toLowerCase().split(/\s+/).filter(term => term.length > 0);
+      
+      // If there are search terms, filter listings
+      if (searchTerms.length > 0) {
+        filteredListings = filteredListings.filter(listing => {
+          // Combine all searchable fields
+          const searchableText = [
+            listing.title.toLowerCase(),
+            listing.description ? listing.description.toLowerCase() : '',
+            listing.category ? listing.category.toLowerCase() : '',
+            listing.condition ? listing.condition.toLowerCase() : '',
+            listing.type.toLowerCase()
+          ].join(' ');
+          
+          // A listing matches if any of the search terms is found
+          return searchTerms.some(term => searchableText.includes(term));
+        });
+      }
     }
 
     // Apply price filters

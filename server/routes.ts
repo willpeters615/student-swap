@@ -41,14 +41,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(filteredListings);
       }
       
-      // Search by title or description
+      // Enhanced search by title, description, category, or condition
       if (req.query.search) {
-        const searchTerm = (req.query.search as string).toLowerCase();
+        const searchInput = (req.query.search as string).toLowerCase();
+        // Split search input into individual terms for better matching
+        const searchTerms = searchInput.split(/\s+/).filter(term => term.length > 0);
+        
         const listings = await storage.getListings();
-        const filteredListings = listings.filter(listing => 
-          listing.title.toLowerCase().includes(searchTerm) || 
-          (listing.description && listing.description.toLowerCase().includes(searchTerm))
-        );
+        
+        // If no search terms after filtering, return all listings
+        if (searchTerms.length === 0) {
+          return res.json(listings);
+        }
+        
+        const filteredListings = listings.filter(listing => {
+          // Fields to search in
+          const searchableText = [
+            listing.title.toLowerCase(),
+            listing.description ? listing.description.toLowerCase() : '',
+            listing.category ? listing.category.toLowerCase() : '',
+            listing.condition ? listing.condition.toLowerCase() : '',
+            listing.type.toLowerCase() // Also search in listing type
+          ].join(' ');
+          
+          // Check if any of the search terms are found in the combined text
+          return searchTerms.some(term => searchableText.includes(term));
+        });
         
         return res.json(filteredListings);
       }
