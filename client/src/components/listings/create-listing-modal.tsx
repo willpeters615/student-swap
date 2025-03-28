@@ -73,6 +73,7 @@ const createListingSchema = z.object({
   description: z.string().min(10, "Description must be at least 10 characters"),
   location: z.string().optional(),
   // These fields are used for services and experiences
+  // Date is optional to allow partial saving of form
   date: z.date().optional(),
   duration: z.string().optional(),
 });
@@ -211,11 +212,13 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
           ...baseListingData,
           condition: data.condition
         };
-      } else if ((data.type === "service" || data.type === "experience") && data.date) {
+      } else if ((data.type === "service" || data.type === "experience")) {
         // For services/experiences
+        // Only include date if it's provided, otherwise it will be null
         listingData = {
           ...baseListingData,
-          date: data.date,
+          // If date is provided, convert to ISO string for PostgreSQL timestamp compatibility
+          ...(data.date && { date: data.date.toISOString() }),
           duration: data.duration || ""
         };
       } else {
