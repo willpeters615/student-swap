@@ -207,22 +207,40 @@ export default function ListingDetail() {
     );
   }
 
-  if (!data || !data.listing || !data.owner) {
+  if (error) {
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
         <main className="flex-1 max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          <Link href="/">
+            <Button variant="ghost" className="mb-6">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to listings
+            </Button>
+          </Link>
           <Card className="p-8 text-center">
             <CardContent>
-              <h1 className="text-2xl font-bold text-red-500 mb-4">Listing Not Found</h1>
+              <h1 className="text-2xl font-bold text-red-500 mb-4">Error Loading Listing</h1>
               <p className="text-gray-600 mb-6">
-                The listing you're looking for doesn't exist or has been removed.
+                {error instanceof Error ? error.message : "Failed to load listing"}
               </p>
               <Link href="/">
                 <Button>Browse other listings</Button>
               </Link>
             </CardContent>
           </Card>
+        </main>
+        <MobileNav />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          <div className="animate-pulse">Loading...</div>
         </main>
         <MobileNav />
       </div>
