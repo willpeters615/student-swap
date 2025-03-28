@@ -200,7 +200,7 @@ export default function ProfilePage() {
                     <TabsTrigger value="stats">Stats</TabsTrigger>
                   </TabsList>
                   
-                  <Button onClick={openModal} className="bg-accent hover:bg-accent/90 text-white">
+                  <Button onClick={openModal} className="bg-primary hover:bg-primary/90 text-white">
                     <Plus className="h-4 w-4 mr-2" />
                     New Listing
                   </Button>
@@ -233,7 +233,7 @@ export default function ProfilePage() {
                         <User className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                         <h3 className="text-lg font-medium mb-2">No listings yet</h3>
                         <p className="text-gray-500 mb-4">Create your first listing to start selling</p>
-                        <Button onClick={openModal} className="bg-accent hover:bg-accent/90 text-white">
+                        <Button onClick={openModal} className="bg-primary hover:bg-primary/90 text-white">
                           <Plus className="h-4 w-4 mr-2" />
                           Create Listing
                         </Button>

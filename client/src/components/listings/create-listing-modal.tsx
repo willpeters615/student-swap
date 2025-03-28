@@ -384,7 +384,7 @@ export function CreateListingModal({ isOpen, onClose }: CreateListingModalProps)
               </Button>
               <Button 
                 type="submit" 
-                className="bg-accent hover:bg-accent/90 text-white"
+                className="bg-primary hover:bg-primary/90 text-white"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (

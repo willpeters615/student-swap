@@ -97,9 +97,11 @@ export default function Header() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setLocation("/profile")}>
-                        <User className="mr-2 h-4 w-4" />
-                        <span>Profile</span>
+                      <DropdownMenuItem asChild>
+                        <Link href="/profile">
+                          <User className="mr-2 h-4 w-4" />
+                          <span>Profile</span>
+                        </Link>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleLogout}>
@@ -109,7 +111,7 @@ export default function Header() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <Button className="ml-4 bg-accent hover:bg-accent/90 text-white" onClick={openCreateModal}>
+                <Button className="ml-4 bg-primary hover:bg-primary/90 text-white" onClick={openCreateModal}>
                   Sell Item
                 </Button>
               </>
