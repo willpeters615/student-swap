@@ -39,13 +39,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Form,
   FormField,
   FormItem,
   FormControl,
   FormMessage,
-  Textarea,
-} from "@/components/ui/dialog";
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
 
 
 const messageSchema = z.object({
