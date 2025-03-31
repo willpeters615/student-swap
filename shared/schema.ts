@@ -53,6 +53,11 @@ export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   password: true,
   university: true,
+  verified: true,
+}).extend({
+  university: z.string().nullable().optional(),
+  verified: z.boolean().nullable().optional().default(false),
+  createdAt: z.date().nullable().optional(),
 });
 
 export const insertListingSchema = createInsertSchema(listings).pick({
@@ -67,11 +72,27 @@ export const insertListingSchema = createInsertSchema(listings).pick({
   userId: true,
   date: true,
   duration: true,
+  status: true,
+}).extend({
+  description: z.string().nullable().optional(),
+  condition: z.string().nullable().optional(),
+  type: z.string().default("item"),
+  images: z.array(z.string()).optional().default([]),
+  location: z.string().nullable().optional(),
+  userId: z.number().nullable().optional(),
+  date: z.date().nullable().optional(),
+  duration: z.string().nullable().optional(),
+  status: z.string().nullable().optional().default("active"),
+  createdAt: z.date().nullable().optional(),
 });
 
 export const insertFavoriteSchema = createInsertSchema(favorites).pick({
   userId: true,
   listingId: true,
+}).extend({
+  userId: z.number().nullable().optional(),
+  listingId: z.number().nullable().optional(),
+  createdAt: z.date().nullable().optional(),
 });
 
 export const insertMessageSchema = createInsertSchema(messages).pick({
@@ -79,6 +100,13 @@ export const insertMessageSchema = createInsertSchema(messages).pick({
   receiverId: true,
   listingId: true,
   content: true,
+  read: true,
+}).extend({
+  senderId: z.number().nullable().optional(),
+  receiverId: z.number().nullable().optional(),
+  listingId: z.number().nullable().optional(),
+  read: z.boolean().nullable().optional().default(false),
+  createdAt: z.date().nullable().optional(),
 });
 
 // Types

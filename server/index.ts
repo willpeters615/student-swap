@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { checkSupabaseConnection } from "./supabase";
+import { setupSupabaseTables } from "./setup-supabase";
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -37,6 +39,22 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Check database connection first
+  try {
+    await setupSupabaseTables();
+    log("Database tables setup completed");
+    
+    // Now check Supabase connection (API layer)
+    const isConnected = await checkSupabaseConnection();
+    if (isConnected) {
+      log("Successfully connected to Supabase");
+    } else {
+      log("Warning: Supabase connection may not be fully operational");
+    }
+  } catch (error) {
+    console.error("Error setting up database:", error);
+  }
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

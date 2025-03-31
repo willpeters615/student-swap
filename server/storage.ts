@@ -6,6 +6,7 @@ import connectPg from "connect-pg-simple";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, desc, or, asc } from "drizzle-orm";
 import postgres from "postgres";
+import { SupabaseStorage } from "./supabase-storage";
 
 const MemoryStore = createMemoryStore(session);
 const PostgresSessionStore = connectPg(session);
@@ -88,7 +89,13 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userCurrentId++;
     const now = new Date();
-    const user: User = { ...insertUser, id, verified: false, createdAt: now };
+    const user: User = {
+      ...insertUser,
+      id,
+      verified: insertUser.verified ?? false,
+      createdAt: now,
+      university: insertUser.university ?? null,
+    };
     this.users.set(id, user);
     return user;
   }
@@ -150,8 +157,15 @@ export class MemStorage implements IStorage {
       ...insertListing, 
       id, 
       createdAt: now, 
-      status: "active",
-      images: insertListing.images || []
+      status: insertListing.status ?? "active",
+      images: insertListing.images ?? [],
+      description: insertListing.description ?? null,
+      condition: insertListing.condition ?? null,
+      type: insertListing.type ?? "item",
+      location: insertListing.location ?? null,
+      userId: insertListing.userId ?? null,
+      date: insertListing.date ?? null,
+      duration: insertListing.duration ?? null
     };
     this.listings.set(id, listing);
     return listing;
@@ -189,8 +203,14 @@ export class MemStorage implements IStorage {
   async createFavorite(insertFavorite: InsertFavorite): Promise<Favorite> {
     const id = this.favoriteCurrentId++;
     const now = new Date();
-    const favorite: Favorite = { ...insertFavorite, id, createdAt: now };
-    const key = `${insertFavorite.userId}-${insertFavorite.listingId}`;
+    const favorite: Favorite = { 
+      ...insertFavorite, 
+      id, 
+      createdAt: now,
+      userId: insertFavorite.userId ?? null,
+      listingId: insertFavorite.listingId ?? null
+    };
+    const key = `${favorite.userId}-${favorite.listingId}`;
     this.favorites.set(key, favorite);
     return favorite;
   }
@@ -234,7 +254,15 @@ export class MemStorage implements IStorage {
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     const id = this.messageCurrentId++;
     const now = new Date();
-    const message: Message = { ...insertMessage, id, createdAt: now, read: false };
+    const message: Message = { 
+      ...insertMessage, 
+      id, 
+      createdAt: now, 
+      read: insertMessage.read ?? false,
+      listingId: insertMessage.listingId ?? null,
+      senderId: insertMessage.senderId ?? null,
+      receiverId: insertMessage.receiverId ?? null
+    };
     this.messages.set(id, message);
     return message;
   }
@@ -480,8 +508,12 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-// Use database storage
-export const storage = new DatabaseStorage();
+// Comment these out to disable them
+// Use Postgres database storage 
+// export const storage = new DatabaseStorage();
 
 // Use in-memory storage for development
 // export const storage = new MemStorage();
+
+// Use Supabase storage
+export const storage = new SupabaseStorage();
