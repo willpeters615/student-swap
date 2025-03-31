@@ -5,12 +5,12 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User, InsertUser, insertUserSchema } from "@shared/schema";
+import { User as SchemaUser, InsertUser, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
 
 declare global {
   namespace Express {
-    interface User extends User {}
+    interface User extends SchemaUser {}
   }
 }
 
@@ -88,9 +88,16 @@ export function setupAuth(app: Express) {
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
     try {
+      console.log(`Deserializing user with ID: ${id}`);
       const user = await storage.getUser(id);
+      if (!user) {
+        console.log(`User with ID ${id} not found during deserialization`);
+        return done(new Error(`User ${id} not found`), null);
+      }
+      console.log(`User deserialized successfully: ${user.username}`);
       done(null, user);
     } catch (error) {
+      console.error(`Error deserializing user: ${error}`);
       done(error);
     }
   });
@@ -144,7 +151,8 @@ export function setupAuth(app: Express) {
         username: req.body.username,
         email: email,
         password: hashedPassword,
-        university: university
+        university: university,
+        verified: false
       };
       
       const userSchema = insertUserSchema.parse(userData);
@@ -174,7 +182,7 @@ export function setupAuth(app: Express) {
       passwordProvided: !!req.body.password
     });
     
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         console.error("Login authentication error:", err);
         return next(err);

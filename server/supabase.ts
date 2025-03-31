@@ -3,8 +3,17 @@ import { createClient } from '@supabase/supabase-js';
 // Create a single supabase client for interacting with your database
 export const supabase = createClient(
   process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_KEY || ''
+  process.env.SUPABASE_KEY || '',
+  {
+    db: { schema: 'public' }
+  }
 );
+
+// Log configuration details
+console.log(`Initializing Supabase client with:
+URL: ${process.env.SUPABASE_URL ? process.env.SUPABASE_URL.substring(0, 10) + '...' : 'missing'}
+Key length: ${process.env.SUPABASE_KEY ? process.env.SUPABASE_KEY.length : 0} characters
+Schema: public`);
 
 // Check if Supabase connection is valid
 export async function checkSupabaseConnection() {

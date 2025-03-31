@@ -39,23 +39,22 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Check database connection first
+  // First check Supabase connection
   try {
-    // Set up database tables using SQL
-    await setupSupabaseTables();
-    log("Database tables setup completed");
-    
-    // Supabase connection check is optional since we're using direct database connection
-    try {
-      const isConnected = await checkSupabaseConnection();
-      if (isConnected) {
-        log("Successfully connected to Supabase (optional)");
-      }
-    } catch (supabaseError) {
-      log("Supabase connection not available - using direct database access instead");
+    const isConnected = await checkSupabaseConnection();
+    if (isConnected) {
+      log("Successfully connected to Supabase");
+      
+      // Set up Supabase tables using SQL (if needed)
+      await setupSupabaseTables();
+      log("Supabase tables setup completed");
+    } else {
+      log("Error: Failed to connect to Supabase");
+      throw new Error("Failed to connect to Supabase");
     }
   } catch (error) {
-    console.error("Error setting up database:", error);
+    console.error("Error setting up Supabase:", error);
+    throw error;
   }
 
   const server = await registerRoutes(app);

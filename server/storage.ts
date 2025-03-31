@@ -6,43 +6,11 @@ import connectPg from "connect-pg-simple";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, desc, or, asc } from "drizzle-orm";
 import postgres from "postgres";
-import { SupabaseStorage } from "./supabase-storage";
+import { IStorage } from './storage-interface';
+import { SupabaseStorage } from './supabase-storage';
 
 const MemoryStore = createMemoryStore(session);
 const PostgresSessionStore = connectPg(session);
-
-// Interface for storage operations
-export interface IStorage {
-  // User operations
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  getUserByEmail(email: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  
-  // Listing operations
-  getListing(id: number): Promise<Listing | undefined>;
-  getListings(filter?: Partial<Listing>): Promise<Listing[]>;
-  getListingsByUserId(userId: number): Promise<Listing[]>;
-  createListing(listing: InsertListing): Promise<Listing>;
-  updateListing(id: number, listing: Partial<Listing>): Promise<Listing | undefined>;
-  deleteListing(id: number): Promise<boolean>;
-  
-  // Favorite operations
-  getFavorite(userId: number, listingId: number): Promise<Favorite | undefined>;
-  getFavoritesByUserId(userId: number): Promise<Favorite[]>;
-  createFavorite(favorite: InsertFavorite): Promise<Favorite>;
-  deleteFavorite(userId: number, listingId: number): Promise<boolean>;
-  
-  // Message operations
-  getMessage(id: number): Promise<Message | undefined>;
-  getMessagesByUserId(userId: number): Promise<Message[]>;
-  getMessagesBetweenUsers(userId1: number, userId2: number, listingId?: number): Promise<Message[]>;
-  createMessage(message: InsertMessage): Promise<Message>;
-  markMessageAsRead(id: number): Promise<Message | undefined>;
-  
-  // Session store
-  sessionStore: any; // Express session store
-}
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
@@ -509,14 +477,11 @@ export class DatabaseStorage implements IStorage {
 }
 
 // Comment these out to disable them
-// Use Postgres database storage 
-// export const storage = new DatabaseStorage();
+// Use Postgres database storage (direct)
+export const storage = new DatabaseStorage();
 
 // Use in-memory storage for development
 // export const storage = new MemStorage();
 
-// Use Supabase storage
+// Use Supabase storage (preferred for production)
 // export const storage = new SupabaseStorage();
-
-// Use Postgres database storage directly
-export const storage = new DatabaseStorage();
