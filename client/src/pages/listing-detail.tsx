@@ -74,7 +74,7 @@ export default function ListingDetail() {
   // Fetch listing data
   const { data, isLoading, error } = useQuery<ListingDetailData>({
     queryKey: [`/api/listings/${listingId}`],
-    queryFn: () => apiRequest("GET", `/api/listings/${listingId}`),
+    // Use the built-in queryFn for consistent handling
     enabled: !!listingId,
   });
 
@@ -173,18 +173,6 @@ export default function ListingDetail() {
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col min-h-screen">
-        <Header />
-        <main className="flex-1 max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-          <div className="animate-pulse">Loading...</div>
-        </main>
-        <MobileNav />
-      </div>
-    );
-  }
-
   if (error || !data || !data.listing || !data.owner) {
     return (
       <div className="flex flex-col min-h-screen">
@@ -262,7 +250,7 @@ export default function ListingDetail() {
             {/* Image carousel */}
             <Carousel className="w-full mb-8">
               <CarouselContent>
-                {images.map((image, index) => (
+                {images.map((image: string, index: number) => (
                   <CarouselItem key={index}>
                     <div className="relative aspect-video overflow-hidden rounded-lg">
                       <img
