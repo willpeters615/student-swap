@@ -29,15 +29,18 @@ import {
   AlignLeft,
   Tag,
   Loader2,
+  Edit,
+  Save,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Listing, User } from "@shared/schema";
+import { Listing, User, listingTypes, listingConditions, getCategoriesByType, ListingType } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -46,14 +49,43 @@ import {
   FormItem,
   FormControl,
   FormMessage,
+  FormLabel,
+  FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 const messageSchema = z.object({
   content: z.string().min(1, "Message cannot be empty"),
 });
 
+const editListingSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters"),
+  type: z.enum(listingTypes),
+  price: z.number().min(1, "Price must be at least 1"),
+  category: z.string().min(1, "Please select a category"),
+  condition: z.string().optional(),
+  description: z.string().min(10, "Description must be at least 10 characters"),
+  location: z.string().optional(),
+  images: z.array(z.string()).optional(),
+  date: z.string().optional(),
+  duration: z.string().optional(),
+});
+
 type MessageFormData = z.infer<typeof messageSchema>;
+type EditListingFormData = z.infer<typeof editListingSchema>;
 
 export default function ListingDetail() {
   const [, params] = useRoute<{ id: string }>("/listings/:id");
@@ -61,13 +93,31 @@ export default function ListingDetail() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
+  const [selectedListingType, setSelectedListingType] = useState<ListingType>("item");
+  const [currentCategories, setCurrentCategories] = useState<readonly string[]>([]);
 
   const form = useForm<MessageFormData>({
     resolver: zodResolver(messageSchema),
     defaultValues: {
       content: "",
+    },
+  });
+  
+  // Edit listing form
+  const editForm = useForm<EditListingFormData>({
+    resolver: zodResolver(editListingSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      price: 0,
+      condition: "",
+      category: "",
+      type: "item",
+      location: "",
+      images: [],
     },
   });
 
@@ -129,6 +179,46 @@ export default function ListingDetail() {
     }
   };
 
+  // Initialize the edit form with the listing data when opened
+  useEffect(() => {
+    if (isEditModalOpen && data?.listing) {
+      const currentListing = data.listing;
+      editForm.reset({
+        title: currentListing.title,
+        description: currentListing.description || "",
+        price: currentListing.price,
+        condition: currentListing.condition || "",
+        category: currentListing.category,
+        type: currentListing.type as ListingType,
+        location: currentListing.location || "",
+        images: currentListing.images || [],
+        date: currentListing.date ? String(currentListing.date) : "",
+        duration: currentListing.duration || "",
+      });
+      
+      setSelectedListingType(currentListing.type as ListingType);
+      setCurrentCategories(getCategoriesByType(currentListing.type as ListingType));
+    }
+  }, [isEditModalOpen, data, editForm]);
+  
+  // Update categories when listing type changes in the edit form
+  useEffect(() => {
+    setCurrentCategories(getCategoriesByType(selectedListingType));
+    
+    // Reset the category field when type changes
+    if (editForm.getValues("type") !== selectedListingType) {
+      editForm.setValue("category", "");
+    }
+    
+    // Update the type field
+    editForm.setValue("type", selectedListingType);
+    
+    // Reset condition field when not an item
+    if (selectedListingType !== "item") {
+      editForm.setValue("condition", "");
+    }
+  }, [selectedListingType, editForm]);
+  
   // Send message mutation - restored from original
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -151,6 +241,29 @@ export default function ListingDetail() {
     onError: (error) => {
       toast({
         title: "Failed to send message",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  // Update listing mutation
+  const updateListingMutation = useMutation({
+    mutationFn: async (data: EditListingFormData) => {
+      await apiRequest("PUT", `/api/listings/${listingId}`, data);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Listing updated",
+        description: "Your listing has been updated successfully",
+      });
+      setIsEditModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/listings/${listingId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/listings"] });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to update listing",
         description: error.message || "Please try again",
         variant: "destructive",
       });
@@ -378,9 +491,18 @@ export default function ListingDetail() {
                     </Button>
                   </div>
                 ) : (
-                  <Button variant="outline" className="w-full" disabled>
-                    This is your listing
-                  </Button>
+                  <div className="space-y-3">
+                    <Button 
+                      className="w-full"
+                      onClick={() => setIsEditModalOpen(true)}
+                    >
+                      <Edit className="mr-2 h-4 w-4" />
+                      Edit Listing
+                    </Button>
+                    <Button variant="outline" className="w-full" disabled>
+                      This is your listing
+                    </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -446,6 +568,241 @@ export default function ListingDetail() {
                     </>
                   ) : (
                     "Send Message"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Listing Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Listing</DialogTitle>
+            <DialogDescription>
+              Update your listing details. Click save when you're done.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Listing Type Tabs */}
+          <div className="mb-4">
+            <div className="mb-2 block text-sm font-medium">What are you offering?</div>
+            <Tabs 
+              value={selectedListingType} 
+              onValueChange={(value) => setSelectedListingType(value as ListingType)}
+            >
+              <TabsList className="grid grid-cols-3">
+                <TabsTrigger value="item">Item</TabsTrigger>
+                <TabsTrigger value="service">Service</TabsTrigger>
+                <TabsTrigger value="experience">Experience</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <Form {...editForm}>
+            <form 
+              onSubmit={editForm.handleSubmit((data) => updateListingMutation.mutate(data))} 
+              className="space-y-6"
+            >
+              {/* Title Field */}
+              <FormField
+                control={editForm.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter listing title" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Description Field */}
+              <FormField
+                control={editForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Describe your listing in detail" 
+                        className="min-h-[120px]"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Include details about condition, features, and why someone might want this.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Price Field */}
+              <FormField
+                control={editForm.control}
+                name="price"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Price (USD)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        placeholder="0" 
+                        min={0} 
+                        {...field}
+                        onChange={e => field.onChange(parseFloat(e.target.value))}
+                        value={field.value || ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Category Field */}
+              <FormField
+                control={editForm.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select 
+                      onValueChange={field.onChange} 
+                      defaultValue={field.value}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {currentCategories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Condition Field - Only for Items */}
+              {selectedListingType === "item" && (
+                <FormField
+                  control={editForm.control}
+                  name="condition"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Condition</FormLabel>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        defaultValue={field.value}
+                        value={field.value || ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select condition" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {listingConditions.map((condition) => (
+                            <SelectItem key={condition} value={condition}>
+                              {condition}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {/* Location Field */}
+              <FormField
+                control={editForm.control}
+                name="location"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Location</FormLabel>
+                    <FormControl>
+                      <Input placeholder="On Campus" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <FormDescription>
+                      Where on campus can people find or meet you?
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Date and Duration Fields - Only for Services/Experiences */}
+              {(selectedListingType === "service" || selectedListingType === "experience") && (
+                <>
+                  <FormField
+                    control={editForm.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>
+                          When is this service or experience available?
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={editForm.control}
+                    name="duration"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Duration</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. 2 hours, 45 minutes" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>
+                          How long does this service or experience last?
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateListingMutation.isPending}>
+                  {updateListingMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Changes
+                    </>
                   )}
                 </Button>
               </DialogFooter>
