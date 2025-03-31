@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { IStorage } from './storage';
+import { IStorage } from './storage-interface';
 import {
   User, InsertUser,
   Listing, InsertListing,
@@ -123,14 +123,48 @@ export class SupabaseStorage implements IStorage {
 
   // User operations
   async getUser(id: number): Promise<User | undefined> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single();
+    console.log(`SupabaseStorage.getUser called with ID: ${id}`);
+    
+    try {
+      // Log Supabase connection details (obscured)
+      console.log('Supabase URL:', process.env.SUPABASE_URL?.slice(0, 10) + '...');
+      console.log('Supabase Key exists:', !!process.env.SUPABASE_KEY);
+      
+      // Check if we can make a simple query first - use correct format for count
+      const testQuery = await supabase.from('users').select('*', { count: 'exact', head: true });
+      console.log('Test query result:', JSON.stringify(testQuery));
+      
+      // Now try to fetch the specific user
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    if (error || !data) return undefined;
-    return mapUserFromSupabase(data);
+      if (error) {
+        console.error(`Error fetching user from Supabase: ${error.message}`);
+        console.error('Full error:', JSON.stringify(error));
+        return undefined;
+      }
+      
+      if (!data) {
+        console.log(`No user data found for ID: ${id}`);
+        return undefined;
+      }
+      
+      console.log(`Found user data: ${JSON.stringify(data)}`);
+      try {
+        const mappedUser = mapUserFromSupabase(data);
+        console.log(`Mapped user: ${JSON.stringify(mappedUser)}`);
+        return mappedUser;
+      } catch (e) {
+        console.error(`Error mapping user data: ${e}`);
+        return undefined;
+      }
+    } catch (e) {
+      console.error(`Unexpected error in getUser: ${e}`);
+      return undefined;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
