@@ -41,15 +41,18 @@ app.use((req, res, next) => {
 (async () => {
   // Check database connection first
   try {
+    // Set up database tables using SQL
     await setupSupabaseTables();
     log("Database tables setup completed");
     
-    // Now check Supabase connection (API layer)
-    const isConnected = await checkSupabaseConnection();
-    if (isConnected) {
-      log("Successfully connected to Supabase");
-    } else {
-      log("Warning: Supabase connection may not be fully operational");
+    // Supabase connection check is optional since we're using direct database connection
+    try {
+      const isConnected = await checkSupabaseConnection();
+      if (isConnected) {
+        log("Successfully connected to Supabase (optional)");
+      }
+    } catch (supabaseError) {
+      log("Supabase connection not available - using direct database access instead");
     }
   } catch (error) {
     console.error("Error setting up database:", error);

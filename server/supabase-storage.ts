@@ -156,15 +156,49 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const preparedUser = prepareUserForSupabase(user);
-    const { data, error } = await supabase
-      .from('users')
-      .insert(preparedUser)
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return mapUserFromSupabase(data);
+    try {
+      console.log('Creating user in Supabase:', user.username);
+      const preparedUser = prepareUserForSupabase(user);
+      console.log('Prepared user data:', preparedUser);
+      
+      // Check if Supabase is properly initialized
+      console.log('Supabase URL:', process.env.SUPABASE_URL?.slice(0, 10) + '...');
+      console.log('Supabase Key exists:', !!process.env.SUPABASE_KEY);
+      
+      // Add more detailed error handling
+      try {
+        const response = await supabase
+          .from('users')
+          .insert(preparedUser)
+          .select()
+          .single();
+        
+        console.log('Supabase Response:', {
+          data: response.data ? 'Data exists' : 'No data',
+          error: response.error,
+          status: response.status,
+          statusText: response.statusText,
+        });
+        
+        if (response.error) {
+          console.error('Supabase insert error details:', response.error);
+          throw new Error(response.error.message || 'Unknown Supabase error');
+        }
+        
+        if (!response.data) {
+          throw new Error('No data returned from Supabase');
+        }
+        
+        console.log('User created successfully:', response.data);
+        return mapUserFromSupabase(response.data);
+      } catch (supabaseError) {
+        console.error('Supabase operation error:', supabaseError);
+        throw supabaseError;
+      }
+    } catch (error) {
+      console.error('Error in createUser:', error);
+      throw error;
+    }
   }
 
   // Listing operations

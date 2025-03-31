@@ -516,4 +516,7 @@ export class DatabaseStorage implements IStorage {
 // export const storage = new MemStorage();
 
 // Use Supabase storage
-export const storage = new SupabaseStorage();
+// export const storage = new SupabaseStorage();
+
+// Use Postgres database storage directly
+export const storage = new DatabaseStorage();
