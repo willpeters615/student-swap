@@ -131,7 +131,7 @@ export class SupabaseStorage implements IStorage {
       console.log('Supabase Key exists:', !!process.env.SUPABASE_KEY);
       
       // Check if we can make a simple query first - use correct format for count
-      const testQuery = await supabase.from('users').select('*', { count: 'exact', head: true });
+      const testQuery = await supabase.from('users').select('*', { count: 'exact' }).limit(1);
       console.log('Test query result:', JSON.stringify(testQuery));
       
       // Now try to fetch the specific user

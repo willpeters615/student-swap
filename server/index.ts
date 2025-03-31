@@ -4,6 +4,11 @@ import { setupVite, serveStatic, log } from "./vite";
 import { checkSupabaseConnection } from "./supabase";
 import { setupSupabaseTables } from "./setup-supabase";
 
+// NOTE: The application is currently using direct PostgreSQL connection (DatabaseStorage)
+// due to issues with Supabase client accessing the tables.
+// Supabase tables are created successfully, but the Supabase client cannot access them.
+// This may be related to how table permissions are set up in Supabase.
+
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
