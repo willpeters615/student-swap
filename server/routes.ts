@@ -95,10 +95,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Remove password from the response
       if (owner) {
         const { password, ...safeOwner } = owner;
-        return res.json({ ...listing, owner: safeOwner });
+        return res.json({ 
+          listing, 
+          owner: safeOwner 
+        });
       }
       
-      res.json(listing);
+      // If no owner found, still return in expected format
+      res.json({ 
+        listing, 
+        owner: null 
+      });
     } catch (error) {
       console.error("Error fetching listing:", error);
       res.status(500).json({ error: "Failed to fetch listing" });
@@ -204,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get the full listing details for each favorite
       const favoritesWithListings = await Promise.all(
         favorites.map(async (favorite) => {
-          const listing = await storage.getListing(favorite.listingId);
+          const listing = await storage.getListing(favorite.listingId || 0);
           return { ...favorite, listing };
         })
       );
@@ -232,7 +239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       // Check if already favorited
-      const existingFavorite = await storage.getFavorite(userId, favoriteData.listingId);
+      const existingFavorite = await storage.getFavorite(userId, favoriteData.listingId || 0);
       
       if (existingFavorite) {
         return res.status(400).json({ error: "Listing already in favorites" });
@@ -289,11 +296,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       for (const message of messages) {
         const otherUserId = message.senderId === userId ? message.receiverId : message.senderId;
-        const listingId = message.listingId;
-        const key = `${otherUserId}-${listingId}`;
+        const listingId = message.listingId || 0;
+        const key = `${otherUserId || 0}-${listingId}`;
         
         if (!conversations.has(key)) {
-          const otherUser = await storage.getUser(otherUserId);
+          const otherUser = await storage.getUser(otherUserId || 0);
           const listing = await storage.getListing(listingId);
           
           if (otherUser && listing) {
@@ -308,7 +315,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else {
           const conversation = conversations.get(key);
           // Update last message if this one is newer
-          if (message.createdAt > conversation.lastMessage.createdAt) {
+          const messageTimestamp = message.createdAt ? new Date(message.createdAt).getTime() : 0;
+          const lastMessageTimestamp = conversation.lastMessage.createdAt ? 
+            new Date(conversation.lastMessage.createdAt).getTime() : 0;
+          if (messageTimestamp > lastMessageTimestamp) {
             conversation.lastMessage = message;
           }
           // Count unread messages
