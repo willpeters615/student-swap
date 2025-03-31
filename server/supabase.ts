@@ -1,11 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Create a single supabase client for interacting with your database
+// Following Supabase documentation for proper connection
 export const supabase = createClient(
   process.env.SUPABASE_URL || '',
   process.env.SUPABASE_KEY || '',
   {
-    db: { schema: 'public' }
+    auth: {
+      persistSession: false,
+    },
+    db: { 
+      schema: 'public' 
+    }
   }
 );
 
@@ -30,19 +36,22 @@ export async function checkSupabaseConnection() {
     
     // Try to access one of our tables
     try {
-      const { error: tableError } = await supabase.from('users').select('count').single();
-      
-      // If we get a specific error about the table not existing, that's actually good news
-      // It means our credentials are working, we just need to create tables
-      if (tableError && tableError.code === '42P01') {
-        console.log('Supabase credentials valid, but tables need to be created');
-        return true;
-      } 
+      const { data: testData, error: tableError } = await supabase.from('users').select('*').limit(1);
       
       if (tableError) {
+        // If we get a specific error about the table not existing, that's actually good news
+        // It means our credentials are working, we just need to create tables
+        if (tableError.code === '42P01') {
+          console.log('Supabase credentials valid, but tables need to be created');
+          return true;
+        } 
+        
         console.error('Supabase table error:', tableError);
+        return true; // Continue anyway since auth is working
       }
       
+      // If we got here, tables exist
+      console.log(`Supabase tables check successful. Found ${testData ? testData.length : 0} users.`);
       return true;
     } catch (tableError) {
       console.error('Error checking table existence:', tableError);
