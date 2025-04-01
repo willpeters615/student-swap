@@ -21,46 +21,51 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2 } from "lucide-react";
 
 // Types for conversation and message
-interface Conversation {
-  otherUser: {
+interface ConversationWithDetails {
+  id: number;
+  listingId: number | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  participants: {
     id: number;
     username: string;
     email: string;
-    university: string;
+    university: string | null;
     verified?: boolean | null;
     createdAt?: Date | null;
-  };
+  }[];
   listing: {
     id: number;
     title: string;
     price: number;
     images?: string[];
   };
-  lastMessage: {
+  latestMessage: {
     id: number;
     content: string;
-    createdAt: string;
-    read: boolean;
+    createdAt: Date | null;
+    readAt: Date | null;
     senderId: number;
-    receiverId: number;
-  };
+    conversationId: number;
+  } | null;
   unreadCount: number;
 }
 
 interface Message {
   id: number;
   content: string;
-  createdAt: string;
-  read: boolean;
+  createdAt: Date | null;
+  readAt: Date | null;
   senderId: number;
-  receiverId: number;
-  listingId: number;
+  conversationId: number;
+  hasAttachment: boolean | null;
+  attachmentUrl: string | null;
 }
 
 export default function MessagesPage() {
   const { user } = useAuth();
   const { onlineUsers } = useWebSocket();
-  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [activeConversation, setActiveConversation] = useState<ConversationWithDetails | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -79,15 +84,16 @@ export default function MessagesPage() {
   }, []);
 
   // Fetch conversations
-  const { data: conversations, isLoading: isLoadingConversations } = useQuery<Conversation[]>({
-    queryKey: ["/api/messages"],
+  const { data: conversations, isLoading: isLoadingConversations } = useQuery<ConversationWithDetails[]>({
+    queryKey: ["/api/conversations"],
     enabled: !!user,
     refetchInterval: 10000, // Refresh every 10 seconds as fallback
   });
 
   // Format date for conversation list
-  const formatConversationDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatConversationDate = (date: Date | null) => {
+    if (!date) return "";
+    
     const now = new Date();
     
     // If today, show time
@@ -145,54 +151,58 @@ export default function MessagesPage() {
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       </div>
                     ) : conversations && conversations.length > 0 ? (
-                      conversations.map((conversation) => (
-                        <div 
-                          key={`${conversation.otherUser.id}-${conversation.listing.id}`}
-                          className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
-                            activeConversation && 
-                            activeConversation.otherUser.id === conversation.otherUser.id && 
-                            activeConversation.listing.id === conversation.listing.id
-                              ? 'bg-gray-100'
-                              : ''
-                          }`}
-                          onClick={() => setActiveConversation(conversation)}
-                        >
-                          <div className="flex items-start gap-3">
-                            <Avatar className="h-10 w-10">
-                              <AvatarImage src="" alt={conversation.otherUser.username} />
-                              <AvatarFallback>
-                                {conversation.otherUser.username.substring(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            
-                            <div className="flex-1 min-w-0">
-                              <div className="flex justify-between items-start">
-                                <h3 className="font-medium truncate">{conversation.otherUser.username}</h3>
-                                <span className="text-xs text-gray-500 whitespace-nowrap">
-                                  {formatConversationDate(conversation.lastMessage.createdAt)}
-                                </span>
-                              </div>
+                      conversations.map((conversation) => {
+                        // Find the other participant (not the current user)
+                        const otherUser = conversation.participants.find(p => p.id !== user?.id);
+                        if (!otherUser) return null;
+                        
+                        return (
+                          <div 
+                            key={conversation.id}
+                            className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
+                              activeConversation && activeConversation.id === conversation.id ? 'bg-gray-100' : ''
+                            }`}
+                            onClick={() => setActiveConversation(conversation)}
+                          >
+                            <div className="flex items-start gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarImage src="" alt={otherUser.username} />
+                                <AvatarFallback>
+                                  {otherUser.username.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
                               
-                              <p className="text-sm text-gray-600 truncate">
-                                {conversation.lastMessage.senderId === user?.id ? 'You: ' : ''}
-                                {truncateText(conversation.lastMessage.content, 30)}
-                              </p>
-                              
-                              <div className="flex items-center mt-1">
-                                <p className="text-xs text-gray-500 truncate mr-2">
-                                  {truncateText(conversation.listing.title, 20)}
-                                </p>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-start">
+                                  <h3 className="font-medium truncate">{otherUser.username}</h3>
+                                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                                    {conversation.latestMessage ? formatConversationDate(conversation.latestMessage.createdAt) : formatConversationDate(conversation.updatedAt)}
+                                  </span>
+                                </div>
                                 
-                                {conversation.unreadCount > 0 && (
-                                  <Badge className="ml-auto bg-primary text-white">
-                                    {conversation.unreadCount}
-                                  </Badge>
+                                {conversation.latestMessage && (
+                                  <p className="text-sm text-gray-600 truncate">
+                                    {conversation.latestMessage.senderId === user?.id ? 'You: ' : ''}
+                                    {truncateText(conversation.latestMessage.content, 30)}
+                                  </p>
                                 )}
+                                
+                                <div className="flex items-center mt-1">
+                                  <p className="text-xs text-gray-500 truncate mr-2">
+                                    {truncateText(conversation.listing?.title || "Unknown listing", 20)}
+                                  </p>
+                                  
+                                  {conversation.unreadCount > 0 && (
+                                    <Badge className="ml-auto bg-primary text-white">
+                                      {conversation.unreadCount}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="p-8 text-center text-gray-500">
                         <p>No messages yet</p>
@@ -214,51 +224,55 @@ export default function MessagesPage() {
                     ) : conversations && conversations.filter(c => c.unreadCount > 0).length > 0 ? (
                       conversations
                         .filter(conversation => conversation.unreadCount > 0)
-                        .map((conversation) => (
-                          <div 
-                            key={`unread-${conversation.otherUser.id}-${conversation.listing.id}`}
-                            className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
-                              activeConversation && 
-                              activeConversation.otherUser.id === conversation.otherUser.id && 
-                              activeConversation.listing.id === conversation.listing.id
-                                ? 'bg-gray-100'
-                                : ''
-                            }`}
-                            onClick={() => setActiveConversation(conversation)}
-                          >
-                            <div className="flex items-start gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarImage src="" alt={conversation.otherUser.username} />
-                                <AvatarFallback>
-                                  {conversation.otherUser.username.substring(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              
-                              <div className="flex-1 min-w-0">
-                                <div className="flex justify-between items-start">
-                                  <h3 className="font-medium truncate">{conversation.otherUser.username}</h3>
-                                  <span className="text-xs text-gray-500 whitespace-nowrap">
-                                    {formatConversationDate(conversation.lastMessage.createdAt)}
-                                  </span>
-                                </div>
+                        .map((conversation) => {
+                          // Find the other participant (not the current user)
+                          const otherUser = conversation.participants.find(p => p.id !== user?.id);
+                          if (!otherUser) return null;
+                          
+                          return (
+                            <div 
+                              key={`unread-${conversation.id}`}
+                              className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
+                                activeConversation && activeConversation.id === conversation.id ? 'bg-gray-100' : ''
+                              }`}
+                              onClick={() => setActiveConversation(conversation)}
+                            >
+                              <div className="flex items-start gap-3">
+                                <Avatar className="h-10 w-10">
+                                  <AvatarImage src="" alt={otherUser.username} />
+                                  <AvatarFallback>
+                                    {otherUser.username.substring(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
                                 
-                                <p className="text-sm text-gray-600 truncate font-medium">
-                                  {truncateText(conversation.lastMessage.content, 30)}
-                                </p>
-                                
-                                <div className="flex items-center mt-1">
-                                  <p className="text-xs text-gray-500 truncate mr-2">
-                                    {truncateText(conversation.listing.title, 20)}
-                                  </p>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex justify-between items-start">
+                                    <h3 className="font-medium truncate">{otherUser.username}</h3>
+                                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                                      {conversation.latestMessage ? formatConversationDate(conversation.latestMessage.createdAt) : formatConversationDate(conversation.updatedAt)}
+                                    </span>
+                                  </div>
                                   
-                                  <Badge className="ml-auto bg-primary text-white">
-                                    {conversation.unreadCount}
-                                  </Badge>
+                                  {conversation.latestMessage && (
+                                    <p className="text-sm text-gray-600 truncate font-medium">
+                                      {truncateText(conversation.latestMessage.content, 30)}
+                                    </p>
+                                  )}
+                                  
+                                  <div className="flex items-center mt-1">
+                                    <p className="text-xs text-gray-500 truncate mr-2">
+                                      {truncateText(conversation.listing?.title || "Unknown listing", 20)}
+                                    </p>
+                                    
+                                    <Badge className="ml-auto bg-primary text-white">
+                                      {conversation.unreadCount}
+                                    </Badge>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                     ) : (
                       <div className="p-8 text-center text-gray-500">
                         <p>No unread messages</p>
@@ -286,12 +300,32 @@ export default function MessagesPage() {
               )}
               
               {activeConversation ? (
-                <ChatInterface 
-                  otherUser={activeConversation.otherUser}
-                  listingId={activeConversation.listing.id}
-                  listingTitle={activeConversation.listing.title}
-                  onBack={() => setActiveConversation(null)} 
-                />
+                (() => {
+                  // Find the other participant (not the current user)
+                  const otherUser = activeConversation.participants.find(p => p.id !== user?.id);
+                  if (!otherUser) return (
+                    <div className="h-full flex flex-col justify-center items-center p-8 text-center text-text-500">
+                      <p>Error: Could not find conversation participant</p>
+                    </div>
+                  );
+                  
+                  return (
+                    <ChatInterface 
+                      otherUser={{
+                        id: otherUser.id,
+                        username: otherUser.username,
+                        email: otherUser.email,
+                        university: otherUser.university,
+                        verified: otherUser.verified || null,
+                        createdAt: otherUser.createdAt || null
+                      }}
+                      listingId={activeConversation.listingId || 0}
+                      listingTitle={activeConversation.listing?.title || "Unknown Listing"}
+                      conversationId={activeConversation.id}
+                      onBack={() => setActiveConversation(null)} 
+                    />
+                  );
+                })()
               ) : (
                 <div className="h-full flex flex-col justify-center items-center p-8 text-center text-gray-500">
                   <h3 className="text-lg font-medium mb-2">Select a conversation</h3>

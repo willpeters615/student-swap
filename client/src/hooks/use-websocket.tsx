@@ -33,8 +33,8 @@ interface TypingStatus {
 type WebSocketContextType = {
   connected: boolean;
   sendMessage: (receiverId: number, listingId: number, content: string) => void;
-  markAsRead: (messageId: number) => void;
-  setTyping: (receiverId: number, listingId: number, isTyping: boolean) => void;
+  markAsRead: (messageId: number, conversationId: number) => void;
+  setTyping: (receiverId: number, listingOrConversationId: number, isTyping: boolean, isConversation?: boolean) => void;
   onlineUsers: OnlineUsers;
   typingUsers: TypingStatus;
 };
@@ -130,10 +130,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           handleUserStatus(message.payload.userId, false);
           break;
         case MessageType.TYPING:
-          handleTypingStatus(message.payload.senderId, message.payload.listingId, true);
+          if (message.payload.conversationId) {
+            // New format with conversation ID
+            handleTypingStatus(message.payload.senderId, message.payload.conversationId, true, true);
+          } else {
+            // Legacy format with listing ID
+            handleTypingStatus(message.payload.senderId, message.payload.listingId, true);
+          }
           break;
         case MessageType.STOPPED_TYPING:
-          handleTypingStatus(message.payload.senderId, message.payload.listingId, false);
+          if (message.payload.conversationId) {
+            // New format with conversation ID
+            handleTypingStatus(message.payload.senderId, message.payload.conversationId, false, true);
+          } else {
+            // Legacy format with listing ID
+            handleTypingStatus(message.payload.senderId, message.payload.listingId, false);
+          }
           break;
         case MessageType.ERROR:
           handleError(message.payload);
@@ -161,20 +173,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     
     // Invalidate cached messages to trigger a refetch
     queryClient.invalidateQueries({
-      queryKey: [`/api/messages/${message.senderId}/${message.listingId}`]
+      queryKey: [`/api/messages/${message.conversationId}`]
     });
     
     // Also invalidate conversations list
     queryClient.invalidateQueries({
-      queryKey: ['/api/messages']
+      queryKey: ['/api/conversations']
     });
   };
   
-  const handleReadReceipt = (payload: { messageId: number }) => {
+  const handleReadReceipt = (payload: { conversationId: number, messageId: number }) => {
     // Update the UI to show message as read
     // This will come from the invalidated queries
     queryClient.invalidateQueries({
-      queryKey: ['/api/messages']
+      queryKey: [`/api/messages/${payload.conversationId}`]
+    });
+    
+    queryClient.invalidateQueries({
+      queryKey: ['/api/conversations']
     });
   };
   
@@ -185,8 +201,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }));
   };
   
-  const handleTypingStatus = (userId: number, listingId: number, isTyping: boolean) => {
-    const key = `${userId}-${listingId}`;
+  const handleTypingStatus = (userId: number, listingIdOrConversationId: number, isTyping: boolean, isConversationId: boolean = false) => {
+    // Make a key either based on user-listing or user-conversation
+    const key = `${userId}-${listingIdOrConversationId}`;
     
     setTypingUsers(prev => ({
       ...prev,
@@ -236,13 +253,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   };
   
   // Mark message as read
-  const markAsRead = (messageId: number) => {
+  const markAsRead = (messageId: number, conversationId: number) => {
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) return;
     
     const message: WebSocketMessage = {
       type: MessageType.READ_RECEIPT,
       payload: {
-        messageId
+        messageId,
+        conversationId
       }
     };
     
@@ -250,14 +268,17 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   };
   
   // Send typing status
-  const setTyping = (receiverId: number, listingId: number, isTyping: boolean) => {
+  const setTyping = (receiverId: number, listingOrConversationId: number, isTyping: boolean, isConversation: boolean = false) => {
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) return;
     
     const message: WebSocketMessage = {
       type: isTyping ? MessageType.TYPING : MessageType.STOPPED_TYPING,
-      payload: {
+      payload: isConversation ? {
         receiverId,
-        listingId
+        conversationId: listingOrConversationId
+      } : {
+        receiverId,
+        listingId: listingOrConversationId
       }
     };
     
