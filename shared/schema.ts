@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uuid, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -37,14 +37,32 @@ export const favorites = pgTable("favorites", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const conversations = pgTable("conversations", {
+  id: serial("id").primaryKey(),
+  listingId: integer("listing_id").references(() => listings.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const conversationParticipants = pgTable("conversation_participants", {
+  conversationId: integer("conversation_id").references(() => conversations.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  lastReadAt: timestamp("last_read_at"),
+}, (table) => {
+  return {
+    pk: primaryKey(table.conversationId, table.userId),
+  };
+});
+
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
-  senderId: integer("sender_id").references(() => users.id),
-  receiverId: integer("receiver_id").references(() => users.id),
-  listingId: integer("listing_id").references(() => listings.id),
+  conversationId: integer("conversation_id").references(() => conversations.id).notNull(),
+  senderId: integer("sender_id").references(() => users.id).notNull(),
   content: text("content").notNull(),
+  hasAttachment: boolean("has_attachment").default(false),
+  attachmentUrl: text("attachment_url"),
   createdAt: timestamp("created_at").defaultNow(),
-  read: boolean("read").default(false),
+  readAt: timestamp("read_at"),
 });
 
 // Zod schemas
@@ -95,18 +113,30 @@ export const insertFavoriteSchema = createInsertSchema(favorites).pick({
   createdAt: z.date().nullable().optional(),
 });
 
-export const insertMessageSchema = createInsertSchema(messages).pick({
-  senderId: true,
-  receiverId: true,
+export const insertConversationSchema = createInsertSchema(conversations).pick({
   listingId: true,
-  content: true,
-  read: true,
 }).extend({
-  senderId: z.number().nullable().optional(),
-  receiverId: z.number().nullable().optional(),
   listingId: z.number().nullable().optional(),
-  read: z.boolean().nullable().optional().default(false),
   createdAt: z.date().nullable().optional(),
+  updatedAt: z.date().nullable().optional(),
+});
+
+export const insertConversationParticipantSchema = createInsertSchema(conversationParticipants).pick({
+  conversationId: true,
+  userId: true,
+}).extend({
+  lastReadAt: z.date().nullable().optional(),
+});
+
+export const insertMessageSchema = createInsertSchema(messages).pick({
+  conversationId: true,
+  senderId: true,
+  content: true,
+}).extend({
+  hasAttachment: z.boolean().nullable().optional().default(false),
+  attachmentUrl: z.string().nullable().optional(),
+  createdAt: z.date().nullable().optional(),
+  readAt: z.date().nullable().optional(),
 });
 
 // Types
@@ -118,6 +148,12 @@ export type InsertListing = z.infer<typeof insertListingSchema>;
 
 export type Favorite = typeof favorites.$inferSelect;
 export type InsertFavorite = z.infer<typeof insertFavoriteSchema>;
+
+export type Conversation = typeof conversations.$inferSelect;
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+
+export type ConversationParticipant = typeof conversationParticipants.$inferSelect;
+export type InsertConversationParticipant = z.infer<typeof insertConversationParticipantSchema>;
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;

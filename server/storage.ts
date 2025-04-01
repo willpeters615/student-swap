@@ -1,10 +1,10 @@
-import { favorites, listings, messages, users } from "@shared/schema";
-import type { User, InsertUser, Listing, InsertListing, Favorite, InsertFavorite, Message, InsertMessage } from "@shared/schema";
+import { favorites, listings, messages, users, conversations, conversationParticipants } from "@shared/schema";
+import type { User, InsertUser, Listing, InsertListing, Favorite, InsertFavorite, Message, InsertMessage, Conversation, InsertConversation, ConversationParticipant, InsertConversationParticipant } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import connectPg from "connect-pg-simple";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, and, desc, or, asc } from "drizzle-orm";
+import { eq, and, desc, or, asc, inArray, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { IStorage } from './storage-interface';
 import { SupabaseStorage } from './supabase-storage';
@@ -17,10 +17,13 @@ export class MemStorage implements IStorage {
   private listings: Map<number, Listing>;
   private favorites: Map<string, Favorite>;
   private messages: Map<number, Message>;
+  private conversations: Map<number, Conversation>;
+  private conversationParticipants: Map<string, ConversationParticipant>;
   private userCurrentId: number;
   private listingCurrentId: number;
   private favoriteCurrentId: number;
   private messageCurrentId: number;
+  private conversationCurrentId: number;
   sessionStore: any;
 
   constructor() {
@@ -28,13 +31,134 @@ export class MemStorage implements IStorage {
     this.listings = new Map();
     this.favorites = new Map();
     this.messages = new Map();
+    this.conversations = new Map();
+    this.conversationParticipants = new Map();
     this.userCurrentId = 1;
     this.listingCurrentId = 1;
     this.favoriteCurrentId = 1;
     this.messageCurrentId = 1;
+    this.conversationCurrentId = 1;
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000 // prune expired entries every 24h
     });
+  }
+  
+  // Conversation methods
+  async getConversation(id: number): Promise<Conversation | undefined> {
+    return this.conversations.get(id);
+  }
+  
+  async getConversationsByUserId(userId: number): Promise<Conversation[]> {
+    // Get all conversation IDs where this user is a participant
+    const participantKeys = Array.from(this.conversationParticipants.keys())
+      .filter(key => key.startsWith(`${userId}-`));
+    
+    // Extract conversation IDs from the keys
+    const conversationIds = participantKeys.map(key => {
+      const [, conversationId] = key.split('-');
+      return parseInt(conversationId);
+    });
+    
+    // Get the actual conversations
+    return Array.from(this.conversations.values())
+      .filter(conversation => conversationIds.includes(conversation.id))
+      .sort((a, b) => 
+        (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0)
+      );
+  }
+  
+  async getConversationByListingAndUsers(
+    listingId: number,
+    userId1: number,
+    userId2: number
+  ): Promise<Conversation | undefined> {
+    // Get all conversations for this listing
+    const listingConversations = Array.from(this.conversations.values())
+      .filter(conversation => conversation.listingId === listingId);
+    
+    // If no conversations for this listing, return undefined
+    if (listingConversations.length === 0) {
+      return undefined;
+    }
+    
+    // Check which of these conversations have both users as participants
+    for (const conversation of listingConversations) {
+      const user1ParticipantKey = `${userId1}-${conversation.id}`;
+      const user2ParticipantKey = `${userId2}-${conversation.id}`;
+      
+      if (
+        this.conversationParticipants.has(user1ParticipantKey) &&
+        this.conversationParticipants.has(user2ParticipantKey)
+      ) {
+        return conversation;
+      }
+    }
+    
+    return undefined;
+  }
+  
+  async createConversation(conversation: InsertConversation): Promise<Conversation> {
+    const id = this.conversationCurrentId++;
+    const now = new Date();
+    const newConversation: Conversation = {
+      ...conversation,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      listingId: conversation.listingId ?? null
+    };
+    
+    this.conversations.set(id, newConversation);
+    return newConversation;
+  }
+  
+  async addParticipantToConversation(
+    conversationId: number,
+    userId: number
+  ): Promise<ConversationParticipant> {
+    const key = `${userId}-${conversationId}`;
+    
+    // Check if participant already exists
+    const existingParticipant = this.conversationParticipants.get(key);
+    if (existingParticipant) {
+      return existingParticipant;
+    }
+    
+    // Create new participant
+    const newParticipant: ConversationParticipant = {
+      userId,
+      conversationId,
+      lastReadAt: null
+    };
+    
+    this.conversationParticipants.set(key, newParticipant);
+    return newParticipant;
+  }
+  
+  async getConversationParticipants(conversationId: number): Promise<ConversationParticipant[]> {
+    return Array.from(this.conversationParticipants.values())
+      .filter(participant => participant.conversationId === conversationId);
+  }
+  
+  async updateParticipantLastRead(
+    conversationId: number,
+    userId: number
+  ): Promise<ConversationParticipant | undefined> {
+    const key = `${userId}-${conversationId}`;
+    const participant = this.conversationParticipants.get(key);
+    
+    if (!participant) {
+      return undefined;
+    }
+    
+    // Update the last read timestamp
+    const updatedParticipant = {
+      ...participant,
+      lastReadAt: new Date()
+    };
+    
+    this.conversationParticipants.set(key, updatedParticipant);
+    return updatedParticipant;
   }
 
   // User methods
@@ -194,26 +318,13 @@ export class MemStorage implements IStorage {
   }
 
   async getMessagesByUserId(userId: number): Promise<Message[]> {
+    // First get all conversations for this user
+    const userConversations = await this.getConversationsByUserId(userId);
+    const conversationIds = userConversations.map(c => c.id);
+    
+    // Then get all messages from these conversations
     return Array.from(this.messages.values())
-      .filter(message => message.senderId === userId || message.receiverId === userId)
-      .sort((a, b) => 
-        (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0)
-      );
-  }
-
-  async getMessagesBetweenUsers(userId1: number, userId2: number, listingId?: number): Promise<Message[]> {
-    return Array.from(this.messages.values())
-      .filter(message => {
-        const userMatch = 
-          (message.senderId === userId1 && message.receiverId === userId2) ||
-          (message.senderId === userId2 && message.receiverId === userId1);
-        
-        if (listingId) {
-          return userMatch && message.listingId === listingId;
-        }
-        
-        return userMatch;
-      })
+      .filter(message => conversationIds.includes(message.conversationId))
       .sort((a, b) => 
         (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0)
       );
@@ -225,14 +336,50 @@ export class MemStorage implements IStorage {
     const message: Message = { 
       ...insertMessage, 
       id, 
-      createdAt: now, 
-      read: insertMessage.read ?? false,
-      listingId: insertMessage.listingId ?? null,
-      senderId: insertMessage.senderId ?? null,
-      receiverId: insertMessage.receiverId ?? null
+      createdAt: now,
+      readAt: null,
+      attachmentUrl: insertMessage.attachmentUrl ?? null
     };
     this.messages.set(id, message);
+    
+    // Update the conversation's updatedAt timestamp
+    if (insertMessage.conversationId) {
+      const conversation = this.conversations.get(insertMessage.conversationId);
+      if (conversation) {
+        this.conversations.set(
+          insertMessage.conversationId,
+          { ...conversation, updatedAt: now }
+        );
+      }
+    }
+    
     return message;
+  }
+
+  async getMessagesByConversationId(
+    conversationId: number, 
+    limit: number = 50, 
+    before?: number
+  ): Promise<Message[]> {
+    // Get all messages for this conversation
+    let messages = Array.from(this.messages.values())
+      .filter(message => message.conversationId === conversationId);
+    
+    // If there's a before ID, filter those out
+    if (before) {
+      messages = messages.filter(message => message.id < before);
+    }
+    
+    // Sort descending by timestamp for pagination
+    const sorted = messages.sort((a, b) => 
+      (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
+    );
+    
+    // Take only the requested number of messages
+    const limited = sorted.slice(0, limit);
+    
+    // Return in ascending order (oldest first) for display
+    return limited.reverse();
   }
 
   async markMessageAsRead(id: number): Promise<Message | undefined> {
@@ -241,7 +388,7 @@ export class MemStorage implements IStorage {
       return undefined;
     }
 
-    const updatedMessage = { ...message, read: true };
+    const updatedMessage = { ...message, readAt: new Date() };
     this.messages.set(id, updatedMessage);
     return updatedMessage;
   }
@@ -266,6 +413,167 @@ export class DatabaseStorage implements IStorage {
       },
       createTableIfMissing: true,
     });
+  }
+  
+  // Conversation methods
+  async getConversation(id: number): Promise<Conversation | undefined> {
+    const result = await this.db.select().from(conversations).where(eq(conversations.id, id));
+    return result[0];
+  }
+  
+  async getConversationsByUserId(userId: number): Promise<Conversation[]> {
+    // Find all conversations where the user is a participant
+    const participantResult = await this.db
+      .select({
+        conversationId: conversationParticipants.conversationId
+      })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.userId, userId));
+    
+    // If no conversations found, return empty array
+    if (participantResult.length === 0) {
+      return [];
+    }
+    
+    // Get all the conversation IDs
+    const conversationIds = participantResult.map(p => p.conversationId);
+    
+    // Fetch the actual conversations
+    return this.db
+      .select()
+      .from(conversations)
+      .where(inArray(conversations.id, conversationIds))
+      .orderBy(desc(conversations.updatedAt));
+  }
+  
+  async getConversationByListingAndUsers(
+    listingId: number,
+    userId1: number,
+    userId2: number
+  ): Promise<Conversation | undefined> {
+    // Find conversations for this listing
+    const listingConversations = await this.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.listingId, listingId));
+    
+    // If no conversations for this listing, return undefined
+    if (listingConversations.length === 0) {
+      return undefined;
+    }
+    
+    const conversationIds = listingConversations.map(c => c.id);
+    
+    // Find conversations where both users are participants
+    const user1Participants = await this.db
+      .select({
+        conversationId: conversationParticipants.conversationId
+      })
+      .from(conversationParticipants)
+      .where(
+        and(
+          eq(conversationParticipants.userId, userId1),
+          inArray(conversationParticipants.conversationId, conversationIds)
+        )
+      );
+    
+    // If user1 isn't in any of these conversations, return undefined
+    if (user1Participants.length === 0) {
+      return undefined;
+    }
+    
+    const user1ConversationIds = user1Participants.map(p => p.conversationId);
+    
+    // Now check which of these conversations include user2
+    const user2Participants = await this.db
+      .select({
+        conversationId: conversationParticipants.conversationId
+      })
+      .from(conversationParticipants)
+      .where(
+        and(
+          eq(conversationParticipants.userId, userId2),
+          inArray(conversationParticipants.conversationId, user1ConversationIds)
+        )
+      );
+    
+    // If no conversation has both users, return undefined
+    if (user2Participants.length === 0) {
+      return undefined;
+    }
+    
+    // Return the first matching conversation
+    return this.getConversation(user2Participants[0].conversationId);
+  }
+  
+  async createConversation(conversation: InsertConversation): Promise<Conversation> {
+    const now = new Date();
+    const result = await this.db
+      .insert(conversations)
+      .values({
+        ...conversation,
+        createdAt: now,
+        updatedAt: now
+      })
+      .returning();
+    return result[0];
+  }
+  
+  async addParticipantToConversation(
+    conversationId: number, 
+    userId: number
+  ): Promise<ConversationParticipant> {
+    // Check if participant already exists
+    const existingParticipant = await this.db
+      .select()
+      .from(conversationParticipants)
+      .where(
+        and(
+          eq(conversationParticipants.conversationId, conversationId),
+          eq(conversationParticipants.userId, userId)
+        )
+      );
+    
+    if (existingParticipant.length > 0) {
+      return existingParticipant[0];
+    }
+    
+    const result = await this.db
+      .insert(conversationParticipants)
+      .values({
+        conversationId,
+        userId,
+        lastReadAt: null
+      })
+      .returning();
+    return result[0];
+  }
+  
+  async getConversationParticipants(conversationId: number): Promise<ConversationParticipant[]> {
+    return this.db
+      .select()
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
+  }
+  
+  async updateParticipantLastRead(
+    conversationId: number, 
+    userId: number
+  ): Promise<ConversationParticipant | undefined> {
+    const now = new Date();
+    const result = await this.db
+      .update(conversationParticipants)
+      .set({
+        lastReadAt: now
+      })
+      .where(
+        and(
+          eq(conversationParticipants.conversationId, conversationId),
+          eq(conversationParticipants.userId, userId)
+        )
+      )
+      .returning();
+    return result[0];
   }
 
   // User methods
@@ -422,60 +730,64 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getMessagesByUserId(userId: number): Promise<Message[]> {
-    return this.db
+  async getMessagesByConversationId(
+    conversationId: number, 
+    limit: number = 50, 
+    before?: number
+  ): Promise<Message[]> {
+    // Build the query
+    let query = this.db
       .select()
       .from(messages)
-      .where(
-        or(
-          eq(messages.senderId, userId),
-          eq(messages.receiverId, userId)
-        )
-      )
-      .orderBy(asc(messages.createdAt));
-  }
-
-  async getMessagesBetweenUsers(userId1: number, userId2: number, listingId?: number): Promise<Message[]> {
-    console.log(`Fetching messages between users ${userId1} and ${userId2}${listingId ? ` for listing ${listingId}` : ''}`);
+      .where(eq(messages.conversationId, conversationId));
     
-    // Get all messages first
-    const allMessages = await this.db.select().from(messages);
-    console.log(`Total messages in database: ${allMessages.length}`);
+    // If a 'before' ID is provided, add that condition
+    if (before) {
+      const whereClause = sql`${messages.id} < ${before}`;
+      query = this.db
+        .select()
+        .from(messages)
+        .where(and(
+          eq(messages.conversationId, conversationId),
+          whereClause
+        ));
+    }
     
-    // Filter in memory
-    let result = allMessages.filter(message => {
-      const userMatch = 
-        (message.senderId === userId1 && message.receiverId === userId2) ||
-        (message.senderId === userId2 && message.receiverId === userId1);
-        
-      if (listingId) {
-        return userMatch && message.listingId === listingId;
-      }
-      
-      return userMatch;
-    });
+    // Execute the query with ordering and limit
+    const result = await query
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
     
-    console.log(`Filtered messages: ${result.length}`);
-    console.log(`Messages data: ${JSON.stringify(result, null, 2)}`);
-    
-    // Sort by createdAt ascending
-    return result.sort((a, b) => 
-      (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0)
-    );
+    // Reverse to get oldest messages first (for display)
+    return result.reverse();
   }
 
   async createMessage(message: InsertMessage): Promise<Message> {
+    // Save the message
     const result = await this.db
       .insert(messages)
-      .values({ ...message, read: false })
+      .values({
+        ...message,
+        hasAttachment: message.hasAttachment || false
+      })
       .returning();
+    
+    // Update the conversation's updatedAt timestamp
+    if (message.conversationId) {
+      await this.db
+        .update(conversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(conversations.id, message.conversationId));
+    }
+    
     return result[0];
   }
 
   async markMessageAsRead(id: number): Promise<Message | undefined> {
+    const now = new Date();
     const result = await this.db
       .update(messages)
-      .set({ read: true })
+      .set({ readAt: now })
       .where(eq(messages.id, id))
       .returning();
     return result[0];
