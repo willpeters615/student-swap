@@ -139,7 +139,7 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
         {isLoading ? (
           // Loading state
           Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className={`flex ${index % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
+            <div key={`skeleton-${index}`} className={`flex ${index % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
               <div className={`max-w-[80%] ${index % 2 === 0 ? 'mr-auto' : 'ml-auto'}`}>
                 <Skeleton className="h-16 w-64 rounded-xl" />
               </div>
@@ -152,7 +152,7 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
             const messageDate = msg.createdAt ? new Date(msg.createdAt) : new Date();
             
             return (
-              <div key={msg.id} className={`flex ${isSentByMe ? 'justify-end' : 'justify-start'}`}>
+              <div key={`msg-${msg.id}`} className={`flex ${isSentByMe ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[80%] ${isSentByMe ? 'ml-auto' : 'mr-auto'}`}>
                   <div 
                     className={cn(
@@ -185,9 +185,14 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
           <div className="flex justify-start">
             <div className="bg-muted p-3 rounded-xl max-w-[80%] mr-auto rounded-bl-none">
               <div className="flex space-x-1">
-                <div key="dot1" className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div key="dot2" className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
-                <div key="dot3" className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '400ms' }}></div>
+                {/* Use an array to create the dots to avoid duplicate key issues */}
+                {[0, 1, 2].map((i) => (
+                  <div 
+                    key={`typing-dot-${i}`} 
+                    className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" 
+                    style={{ animationDelay: `${i * 200}ms` }}
+                  />
+                ))}
               </div>
             </div>
           </div>
