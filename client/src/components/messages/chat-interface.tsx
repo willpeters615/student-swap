@@ -30,7 +30,7 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   
   // Fetch messages
   const { data: messages, isLoading } = useQuery<Message[]>({
-    queryKey: ['/api/messages', otherUser.id, listingId],
+    queryKey: [`/api/messages/${otherUser.id}/${listingId}`],
     refetchInterval: 5000, // Fallback polling in case WebSocket fails
   });
   
