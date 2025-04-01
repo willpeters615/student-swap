@@ -185,9 +185,9 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
           <div className="flex justify-start">
             <div className="bg-muted p-3 rounded-xl max-w-[80%] mr-auto rounded-bl-none">
               <div className="flex space-x-1">
-                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
-                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '400ms' }}></div>
+                <div key="dot1" className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div key="dot2" className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
+                <div key="dot3" className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '400ms' }}></div>
               </div>
             </div>
           </div>

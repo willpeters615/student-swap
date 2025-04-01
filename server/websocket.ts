@@ -164,7 +164,8 @@ export class WebSocketServer {
         senderId,
         receiverId,
         listingId,
-        content
+        content,
+        read: false
       });
       
       // Send to recipient if online
