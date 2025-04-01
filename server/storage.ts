@@ -436,8 +436,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMessagesBetweenUsers(userId1: number, userId2: number, listingId?: number): Promise<Message[]> {
+    console.log(`Fetching messages between users ${userId1} and ${userId2}${listingId ? ` for listing ${listingId}` : ''}`);
+    
     // Get all messages first
     const allMessages = await this.db.select().from(messages);
+    console.log(`Total messages in database: ${allMessages.length}`);
     
     // Filter in memory
     let result = allMessages.filter(message => {
@@ -451,6 +454,9 @@ export class DatabaseStorage implements IStorage {
       
       return userMatch;
     });
+    
+    console.log(`Filtered messages: ${result.length}`);
+    console.log(`Messages data: ${JSON.stringify(result, null, 2)}`);
     
     // Sort by createdAt ascending
     return result.sort((a, b) => 

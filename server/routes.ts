@@ -346,7 +346,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const otherUserId = parseInt(req.params.userId);
       const listingId = parseInt(req.params.listingId);
       
+      console.log(`Fetching messages between user ${currentUserId} and user ${otherUserId} for listing ${listingId}`);
+      
       const messages = await storage.getMessagesBetweenUsers(currentUserId, otherUserId, listingId);
+      
+      console.log(`Found ${messages.length} messages`);
       
       // Mark received messages as read
       for (const message of messages) {

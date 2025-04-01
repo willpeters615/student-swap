@@ -161,7 +161,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     
     // Invalidate cached messages to trigger a refetch
     queryClient.invalidateQueries({
-      queryKey: ['/api/messages', message.senderId, message.listingId]
+      queryKey: [`/api/messages/${message.senderId}/${message.listingId}`]
     });
     
     // Also invalidate conversations list

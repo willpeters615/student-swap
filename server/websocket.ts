@@ -160,6 +160,8 @@ export class WebSocketServer {
       }
       
       // Save message to database
+      console.log(`Creating message: senderId=${senderId}, receiverId=${receiverId}, listingId=${listingId}, content=${content}`);
+      
       const message = await storage.createMessage({
         senderId,
         receiverId,
@@ -167,6 +169,9 @@ export class WebSocketServer {
         content,
         read: false
       });
+      
+      console.log(`Message created with ID: ${message.id}`);
+      console.log(JSON.stringify(message, null, 2));
       
       // Send to recipient if online
       this.sendToUser(receiverId, {
