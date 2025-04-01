@@ -244,17 +244,14 @@ export class WebSocketServer {
   
   private sendToUser(userId: number, message: WebSocketMessage) {
     const connection = this.connections.get(userId);
-    const OPEN = 1; // WebSocket.OPEN constant value
     
-    if (connection && connection.socket.readyState === OPEN) {
+    if (connection && connection.socket.readyState === WebSocket.OPEN) {
       connection.socket.send(JSON.stringify(message));
     }
   }
   
   private sendError(socket: any, errorMessage: string) {
-    const OPEN = 1; // WebSocket.OPEN constant value
-    
-    if (socket.readyState === OPEN) {
+    if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({
         type: MessageType.ERROR,
         payload: { message: errorMessage }

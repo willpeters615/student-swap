@@ -59,8 +59,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     
     // Create WebSocket connection
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws?userId=${user.id}`;
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws?userId=${user.id}`;
     
+    console.log('Connecting to WebSocket:', wsUrl);
     socket.current = new WebSocket(wsUrl);
     
     // Setup event handlers
@@ -80,7 +82,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           if (user) {
             console.log('Reconnecting WebSocket...');
             const newProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const newWsUrl = `${newProtocol}//${window.location.host}/ws?userId=${user.id}`;
+            const newHost = window.location.host;
+            const newWsUrl = `${newProtocol}//${newHost}/ws?userId=${user.id}`;
+            console.log('Reconnecting to WebSocket:', newWsUrl);
             socket.current = new WebSocket(newWsUrl);
           }
         }, 5000);
