@@ -1,12 +1,22 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertListingSchema, insertFavoriteSchema, insertMessageSchema } from "@shared/schema";
+import { insertListingSchema, insertFavoriteSchema, insertMessageSchema, insertConversationSchema, insertConversationParticipantSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth } from "./auth";
-import { setupWebSocketServer, getWebSocketServer } from "./websocket";
+import { setupWebSocketServer, getWebSocketServer, MessageType } from "./websocket";
+import { migrateMessagingSystem } from "./db-migration";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Run database migrations for messaging system
+  try {
+    console.log("Running messaging system migration...");
+    const migrationResult = await migrateMessagingSystem();
+    console.log(`Migration completed with result: ${migrationResult}`);
+  } catch (error) {
+    console.error("Error running database migration:", error);
+  }
+
   // Set up authentication routes
   setupAuth(app);
 
@@ -281,61 +291,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Messages endpoints
   
-  // Get all conversations for the current user
+  // Get all conversations for the current user (DEPRECATED - use /api/conversations instead)
   app.get("/api/messages", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      const userId = req.user.id;
-      const messages = await storage.getMessagesByUserId(userId);
-      
-      // Get unique conversations by grouping messages by the other user
-      const conversations = new Map();
-      
-      for (const message of messages) {
-        const otherUserId = message.senderId === userId ? message.receiverId : message.senderId;
-        const listingId = message.listingId || 0;
-        const key = `${otherUserId || 0}-${listingId}`;
-        
-        if (!conversations.has(key)) {
-          const otherUser = await storage.getUser(otherUserId || 0);
-          const listing = await storage.getListing(listingId);
-          
-          if (otherUser && listing) {
-            const { password, ...safeUser } = otherUser;
-            conversations.set(key, {
-              otherUser: safeUser,
-              listing,
-              lastMessage: message,
-              unreadCount: message.receiverId === userId && !message.read ? 1 : 0
-            });
-          }
-        } else {
-          const conversation = conversations.get(key);
-          // Update last message if this one is newer
-          const messageTimestamp = message.createdAt ? new Date(message.createdAt).getTime() : 0;
-          const lastMessageTimestamp = conversation.lastMessage.createdAt ? 
-            new Date(conversation.lastMessage.createdAt).getTime() : 0;
-          if (messageTimestamp > lastMessageTimestamp) {
-            conversation.lastMessage = message;
-          }
-          // Count unread messages
-          if (message.receiverId === userId && !message.read) {
-            conversation.unreadCount++;
-          }
-        }
-      }
-      
-      res.json(Array.from(conversations.values()));
+      // Redirect to the new conversation-based API
+      // This prevents TypeScript errors and maintains backward compatibility
+      return res.redirect('/api/conversations');
     } catch (error) {
-      console.error("Error fetching conversations:", error);
+      console.error("Error redirecting to conversations:", error);
       res.status(500).json({ error: "Failed to fetch conversations" });
     }
   });
 
-  // Get messages between users for a specific listing
+  // Get messages between users for a specific listing (DEPRECATED)
   app.get("/api/messages/:userId/:listingId", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
@@ -346,27 +318,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const otherUserId = parseInt(req.params.userId);
       const listingId = parseInt(req.params.listingId);
       
-      console.log(`Fetching messages between user ${currentUserId} and user ${otherUserId} for listing ${listingId}`);
+      console.log(`Using legacy API: Fetching messages between user ${currentUserId} and user ${otherUserId} for listing ${listingId}`);
       
-      const messages = await storage.getMessagesBetweenUsers(currentUserId, otherUserId, listingId);
+      // Check if a conversation exists or create one
+      let conversation = await storage.getConversationByParticipants(currentUserId, otherUserId, listingId);
       
-      console.log(`Found ${messages.length} messages`);
-      
-      // Mark received messages as read
-      for (const message of messages) {
-        if (message.receiverId === currentUserId && !message.read) {
-          await storage.markMessageAsRead(message.id);
-        }
+      if (!conversation) {
+        // Create a new conversation if it doesn't exist
+        const conversationData = {
+          listingId: listingId,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        conversation = await storage.createConversation(conversationData);
+        
+        // Add participants
+        await storage.addParticipantToConversation({
+          conversationId: conversation.id,
+          userId: currentUserId,
+          lastReadAt: new Date()
+        });
+        
+        await storage.addParticipantToConversation({
+          conversationId: conversation.id,
+          userId: otherUserId,
+          lastReadAt: null
+        });
+
+        // No messages yet in a new conversation
+        return res.json([]);
       }
       
-      res.json(messages);
+      // Get messages for this conversation
+      const messages = await storage.getConversationMessages(conversation.id);
+      
+      // Mark messages as read
+      await storage.markConversationAsRead(conversation.id, currentUserId);
+      
+      // Format messages to match the old API format for compatibility
+      const compatibleMessages = messages.map(message => ({
+        ...message,
+        // Add legacy fields to maintain compatibility
+        receiverId: message.senderId !== currentUserId ? currentUserId : otherUserId,
+        listingId: listingId,
+        read: message.readAt !== null
+      }));
+      
+      res.json(compatibleMessages);
     } catch (error) {
       console.error("Error fetching messages:", error);
       res.status(500).json({ error: "Failed to fetch messages" });
     }
   });
 
-  // Send a message
+  // Send a message (DEPRECATED - use /api/conversations/:id/messages instead)
   app.post("/api/messages", async (req, res) => {
     try {
       if (!req.isAuthenticated()) {
@@ -374,17 +380,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const senderId = req.user.id;
+      const receiverId = req.body.receiverId;
+      const listingId = req.body.listingId || null;
+      const content = req.body.content;
       
-      // Validate message data
+      if (!receiverId || !content) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      // Check if a conversation exists or create one
+      let conversation = await storage.getConversationByParticipants(senderId, receiverId, listingId);
+      
+      if (!conversation) {
+        // Create a new conversation
+        const conversationData = {
+          listingId: listingId,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        conversation = await storage.createConversation(conversationData);
+        
+        // Add participants
+        await storage.addParticipantToConversation({
+          conversationId: conversation.id,
+          userId: senderId,
+          lastReadAt: new Date()
+        });
+        
+        await storage.addParticipantToConversation({
+          conversationId: conversation.id,
+          userId: receiverId,
+          lastReadAt: null
+        });
+      }
+      
+      // Now create the message with the new schema
       const messageData = insertMessageSchema.parse({
+        conversationId: conversation.id,
         senderId,
-        receiverId: req.body.receiverId,
-        listingId: req.body.listingId,
-        content: req.body.content
+        content,
+        hasAttachment: false,
+        attachmentUrl: null,
+        createdAt: new Date()
       });
       
       const newMessage = await storage.createMessage(messageData);
-      res.status(201).json(newMessage);
+      
+      // Update conversation timestamp
+      await storage.updateConversationTimestamp(conversation.id);
+      
+      // Mark as read for the sender
+      await storage.markConversationAsRead(conversation.id, senderId);
+      
+      // Format the response to match the old API format for compatibility
+      const compatibleMessage = {
+        ...newMessage,
+        // Add legacy fields
+        receiverId,
+        listingId,
+        read: false
+      };
+      
+      // Notify via WebSocket if available
+      const wss = getWebSocketServer();
+      if (wss) {
+        // Using the WebSocket server's sendToUser method instead of direct client access
+        wss.sendToUser(receiverId, {
+          type: MessageType.NEW_MESSAGE,
+          payload: {
+            message: newMessage,
+            conversationId: conversation.id
+          }
+        });
+      }
+      
+      res.status(201).json(compatibleMessage);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
@@ -414,6 +485,262 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user profile:", error);
       res.status(500).json({ error: "Failed to fetch user profile" });
+    }
+  });
+
+  // NEW CONVERSATION-BASED MESSAGING ENDPOINTS
+  
+  // Get all conversations for the current user
+  app.get("/api/conversations", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const userId = req.user.id;
+      const conversations = await storage.getConversationsByUserId(userId);
+      
+      // Get additional details for each conversation
+      const conversationsWithDetails = await Promise.all(
+        conversations.map(async (conversation) => {
+          // Get participants
+          const participants = await storage.getConversationParticipants(conversation.id);
+          
+          // Get the other user in the conversation
+          const otherParticipant = participants.find(p => p.userId !== userId);
+          if (!otherParticipant) return null;
+          
+          // Get other user details
+          const otherUser = await storage.getUser(otherParticipant.userId || 0);
+          if (!otherUser) return null;
+          
+          // Remove password from the response
+          const { password, ...safeUser } = otherUser;
+          
+          // Get the listing if it exists
+          const listing = conversation.listingId 
+            ? await storage.getListing(conversation.listingId) 
+            : null;
+          
+          // Get the last message in the conversation
+          const messages = await storage.getConversationMessages(conversation.id);
+          const lastMessage = messages.length > 0 ? messages[0] : null;
+          
+          // Count unread messages
+          const unreadCount = messages.filter(m => 
+            m.senderId !== userId && !m.readAt
+          ).length;
+          
+          return {
+            id: conversation.id,
+            otherUser: safeUser,
+            listing,
+            lastMessage,
+            unreadCount,
+            updatedAt: conversation.updatedAt
+          };
+        })
+      );
+      
+      // Filter out nulls (conversations where we couldn't get all the details)
+      const validConversations = conversationsWithDetails.filter(c => c !== null);
+      
+      // Sort by most recent update
+      validConversations.sort((a, b) => {
+        const dateA = a?.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const dateB = b?.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return dateB - dateA;
+      });
+      
+      res.json(validConversations);
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      res.status(500).json({ error: "Failed to fetch conversations" });
+    }
+  });
+  
+  // Get messages for a specific conversation
+  app.get("/api/conversations/:id", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const userId = req.user.id;
+      const conversationId = parseInt(req.params.id);
+      
+      // Verify user is a participant in this conversation
+      const participants = await storage.getConversationParticipants(conversationId);
+      const userIsParticipant = participants.some(p => p.userId === userId);
+      
+      if (!userIsParticipant) {
+        return res.status(403).json({ error: "Not authorized to view this conversation" });
+      }
+      
+      // Get the conversation
+      const conversation = await storage.getConversation(conversationId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      
+      // Get messages in the conversation
+      const messages = await storage.getConversationMessages(conversationId);
+      
+      // Mark messages as read
+      await storage.markConversationAsRead(conversationId, userId);
+      
+      // Get listing details if available
+      const listing = conversation.listingId 
+        ? await storage.getListing(conversation.listingId) 
+        : null;
+      
+      // Get other participant details
+      const otherParticipant = participants.find(p => p.userId !== userId);
+      const otherUser = otherParticipant 
+        ? await storage.getUser(otherParticipant.userId || 0) 
+        : null;
+      
+      // Remove password from the response
+      const safeOtherUser = otherUser ? { 
+        ...otherUser, 
+        password: undefined 
+      } : null;
+      
+      res.json({
+        conversation,
+        messages,
+        listing,
+        otherUser: safeOtherUser
+      });
+    } catch (error) {
+      console.error("Error fetching conversation:", error);
+      res.status(500).json({ error: "Failed to fetch conversation" });
+    }
+  });
+  
+  // Create or get a conversation with another user about a listing
+  app.post("/api/conversations", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUserId = req.user.id;
+      const otherUserId = parseInt(req.body.userId);
+      const listingId = req.body.listingId ? parseInt(req.body.listingId) : undefined;
+      
+      if (currentUserId === otherUserId) {
+        return res.status(400).json({ error: "Cannot create a conversation with yourself" });
+      }
+      
+      // Check if the other user exists
+      const otherUser = await storage.getUser(otherUserId);
+      if (!otherUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // Check if listing exists if provided
+      if (listingId) {
+        const listing = await storage.getListing(listingId);
+        if (!listing) {
+          return res.status(404).json({ error: "Listing not found" });
+        }
+      }
+      
+      // Check if a conversation already exists
+      let conversation = await storage.getConversationByParticipants(currentUserId, otherUserId, listingId);
+      
+      if (!conversation) {
+        // Create a new conversation
+        const conversationData = {
+          listingId: listingId,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        conversation = await storage.createConversation(conversationData);
+        
+        // Add participants
+        await storage.addParticipantToConversation({
+          conversationId: conversation.id,
+          userId: currentUserId,
+          lastReadAt: new Date()
+        });
+        
+        await storage.addParticipantToConversation({
+          conversationId: conversation.id,
+          userId: otherUserId,
+          lastReadAt: null
+        });
+      }
+      
+      res.status(201).json(conversation);
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      res.status(500).json({ error: "Failed to create conversation" });
+    }
+  });
+  
+  // Send a message to a conversation
+  app.post("/api/conversations/:id/messages", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const senderId = req.user.id;
+      const conversationId = parseInt(req.params.id);
+      
+      // Verify user is a participant in this conversation
+      const participants = await storage.getConversationParticipants(conversationId);
+      const userIsParticipant = participants.some(p => p.userId === senderId);
+      
+      if (!userIsParticipant) {
+        return res.status(403).json({ error: "Not authorized to send messages in this conversation" });
+      }
+      
+      // Validate message data
+      const messageData = insertMessageSchema.parse({
+        conversationId,
+        senderId,
+        content: req.body.content,
+        hasAttachment: req.body.hasAttachment || false,
+        attachmentUrl: req.body.attachmentUrl || null,
+        createdAt: new Date()
+      });
+      
+      const newMessage = await storage.createMessage(messageData);
+      
+      // Update conversation timestamp
+      await storage.updateConversationTimestamp(conversationId);
+      
+      // Mark as read for the sender
+      await storage.markConversationAsRead(conversationId, senderId);
+      
+      // Notify via WebSocket if available
+      const wss = getWebSocketServer();
+      if (wss) {
+        // Find the other participant to notify
+        const otherParticipant = participants.find(p => p.userId !== senderId);
+        if (otherParticipant && otherParticipant.userId) {
+          // Using the WebSocket server's sendToUser method
+          wss.sendToUser(otherParticipant.userId, {
+            type: MessageType.NEW_MESSAGE,
+            payload: {
+              message: newMessage,
+              conversationId
+            }
+          });
+        }
+      }
+      
+      res.status(201).json(newMessage);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Error sending message:", error);
+      res.status(500).json({ error: "Failed to send message" });
     }
   });
 
