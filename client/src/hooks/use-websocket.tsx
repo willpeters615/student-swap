@@ -1,7 +1,19 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { Message } from '@shared/schema';
+import { Message as SchemaMessage } from '@shared/schema';
 import { useAuth } from './use-auth';
 import { useToast } from './use-toast';
+
+// Create a Message type that's compatible with our handlers
+interface Message extends SchemaMessage {
+  id: number;
+  content: string;
+  conversationId: number;
+  senderId: number;
+  createdAt: Date | null;
+  hasAttachment: boolean | null;
+  attachmentUrl: string | null;
+  readAt: Date | null;
+}
 import { queryClient } from '@/lib/queryClient';
 
 // Define message types that match the server types
@@ -13,7 +25,8 @@ export enum MessageType {
   USER_OFFLINE = 'user_offline',
   TYPING = 'typing',
   STOPPED_TYPING = 'stopped_typing',
-  ERROR = 'error'
+  ERROR = 'error',
+  NEW_MESSAGE = 'new_message'
 }
 
 // Message interface
@@ -27,14 +40,14 @@ interface OnlineUsers {
 }
 
 interface TypingStatus {
-  [key: string]: boolean; // Format: `${userId}-${listingId}`
+  [key: string]: boolean; // Format: `${userId}-${targetId}` where targetId is conversationId or listingId
 }
 
 type WebSocketContextType = {
   connected: boolean;
   sendMessage: (receiverId: number, listingId: number, content: string) => void;
   markAsRead: (messageId: number) => void;
-  setTyping: (receiverId: number, listingId: number, isTyping: boolean) => void;
+  setTyping: (receiverId: number, targetId: number, isTyping: boolean) => void;
   onlineUsers: OnlineUsers;
   typingUsers: TypingStatus;
 };
@@ -130,10 +143,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           handleUserStatus(message.payload.userId, false);
           break;
         case MessageType.TYPING:
-          handleTypingStatus(message.payload.senderId, message.payload.listingId, true);
+          // The payload can have either listingId or targetId (which can be conversationId)
+          handleTypingStatus(message.payload.userId, message.payload.targetId || message.payload.listingId, true);
           break;
         case MessageType.STOPPED_TYPING:
-          handleTypingStatus(message.payload.senderId, message.payload.listingId, false);
+          // The payload can have either listingId or targetId (which can be conversationId)
+          handleTypingStatus(message.payload.userId, message.payload.targetId || message.payload.listingId, false);
           break;
         case MessageType.ERROR:
           handleError(message.payload);
@@ -160,8 +175,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
     
     // Invalidate cached messages to trigger a refetch
+    // For the new system we use conversation ID
     queryClient.invalidateQueries({
-      queryKey: [`/api/messages/${message.senderId}/${message.listingId}`]
+      queryKey: [`/api/conversations/${message.conversationId}/messages`]
     });
     
     // Also invalidate conversations list
@@ -185,8 +201,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }));
   };
   
-  const handleTypingStatus = (userId: number, listingId: number, isTyping: boolean) => {
-    const key = `${userId}-${listingId}`;
+  const handleTypingStatus = (userId: number, targetId: number, isTyping: boolean) => {
+    // targetId can be either listingId or conversationId
+    const key = `${userId}-${targetId}`;
     
     setTypingUsers(prev => ({
       ...prev,
@@ -250,14 +267,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   };
   
   // Send typing status
-  const setTyping = (receiverId: number, listingId: number, isTyping: boolean) => {
+  const setTyping = (receiverId: number, targetId: number, isTyping: boolean) => {
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) return;
     
     const message: WebSocketMessage = {
       type: isTyping ? MessageType.TYPING : MessageType.STOPPED_TYPING,
       payload: {
         receiverId,
-        listingId
+        targetId // This can be either listingId or conversationId
       }
     };
     

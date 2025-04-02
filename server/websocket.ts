@@ -320,18 +320,19 @@ export class WebSocketServer {
   
   private handleTypingIndicator(senderId: number, payload: any, isTyping: boolean) {
     try {
-      const { conversationId } = payload;
+      // Support both targetId (which can be conversationId) and legacy conversationId
+      const targetId = payload.targetId || payload.conversationId;
       
-      if (!conversationId) {
+      if (!targetId) {
         log('Invalid typing indicator payload', 'websocket');
         return;
       }
       
       // Send typing indicator to all participants in the conversation
-      this.broadcastToConversation(conversationId, senderId, {
+      this.broadcastToConversation(targetId, senderId, {
         type: isTyping ? MessageType.TYPING : MessageType.STOPPED_TYPING,
         payload: {
-          conversationId,
+          targetId, // Using the same consistent field as from the client
           userId: senderId
         }
       });
