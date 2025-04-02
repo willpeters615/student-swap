@@ -9,12 +9,16 @@ import {
   ListingType 
 } from "@shared/schema";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function CategoryFilters() {
-  const { activeCategory, setActiveCategory, activeListingType, setActiveListingType } = useContext(FilterContext);
+  const { activeCategory, setActiveCategory, activeListingType, setActiveListingType, hideOwnListings, setHideOwnListings } = useContext(FilterContext);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollButtons, setShowScrollButtons] = useState(true);
+  const { user } = useAuth();
   
   // Get the categories for the currently selected listing type
   const currentCategories = getCategoriesByType(activeListingType);
@@ -62,14 +66,34 @@ export default function CategoryFilters() {
   return (
     <div className="bg-white border-b">
       <div className="max-w-7xl mx-auto px-4 py-2">
-        {/* Listing Type Tabs */}
-        <Tabs value={activeListingType} onValueChange={handleTypeChange} className="mb-2">
-          <TabsList>
-            <TabsTrigger value="item">Items</TabsTrigger>
-            <TabsTrigger value="service">Services</TabsTrigger>
-            <TabsTrigger value="experience">Experiences</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex justify-between items-center mb-2">
+          {/* Listing Type Tabs */}
+          <Tabs value={activeListingType} onValueChange={handleTypeChange}>
+            <TabsList>
+              <TabsTrigger value="item">Items</TabsTrigger>
+              <TabsTrigger value="service">Services</TabsTrigger>
+              <TabsTrigger value="experience">Experiences</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          
+          {/* Hide Own Listings Toggle - Only show if user is logged in */}
+          {user && (
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="hide-own-listings" 
+                checked={hideOwnListings}
+                onCheckedChange={setHideOwnListings}
+              />
+              <Label htmlFor="hide-own-listings" className="text-sm flex items-center">
+                {hideOwnListings ? (
+                  <><EyeOff className="w-4 h-4 mr-1" /> Hide my listings</>
+                ) : (
+                  <><Eye className="w-4 h-4 mr-1" /> Show all listings</>
+                )}
+              </Label>
+            </div>
+          )}
+        </div>
         
         {/* Category Scrollable List with Scroll Indicators */}
         <div className="relative">
