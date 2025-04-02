@@ -744,6 +744,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete all conversations and messages for a user
+  app.delete("/api/conversations", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const userId = req.user.id;
+      const conversations = await storage.getConversationsByUserId(userId);
+      
+      for (const conversation of conversations) {
+        await storage.deleteConversationMessages(conversation.id);
+      }
+      
+      res.status(200).json({ success: true, message: "All messages deleted" });
+    } catch (error) {
+      console.error("Error deleting all messages:", error);
+      res.status(500).json({ error: "Failed to delete messages" });
+    }
+  });
+
   // Delete all messages in a conversation
   app.delete("/api/conversations/:id/messages", async (req, res) => {
     try {

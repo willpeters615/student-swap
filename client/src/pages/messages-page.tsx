@@ -40,7 +40,7 @@ interface Conversation {
   lastMessage: {
     id: number;
     content: string;
-    createdAt: string;
+    createdAt: string | null;
     read: boolean;
     senderId: number;
     receiverId: number;
@@ -88,7 +88,12 @@ export default function MessagesPage() {
   });
 
   // Format date for conversation list
-  const formatConversationDate = (dateString: string) => {
+  const formatConversationDate = (dateString: string | null) => {
+    // Return a placeholder if dateString is null or undefined
+    if (!dateString) {
+      return "Recent";
+    }
+    
     const date = new Date(dateString);
     const now = new Date();
     
@@ -147,7 +152,9 @@ export default function MessagesPage() {
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       </div>
                     ) : conversations && conversations.length > 0 ? (
-                      conversations.map((conversation) => (
+                      conversations
+                        .filter(conv => conv && conv.lastMessage) // Filter out conversations with missing lastMessage
+                        .map((conversation) => (
                         <div 
                           key={`conversation-${conversation.id}`}
                           className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
@@ -181,7 +188,7 @@ export default function MessagesPage() {
                               
                               <div className="flex items-center mt-1">
                                 <p className="text-xs text-gray-500 truncate mr-2">
-                                  {truncateText(conversation.listing.title, 20)}
+                                  {conversation.listing ? truncateText(conversation.listing.title, 20) : "No listing"}
                                 </p>
                                 
                                 {conversation.unreadCount > 0 && (
@@ -212,9 +219,9 @@ export default function MessagesPage() {
                       <div className="flex justify-center items-center h-32">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       </div>
-                    ) : conversations && conversations.filter(c => c.unreadCount > 0).length > 0 ? (
+                    ) : conversations && conversations.filter(c => c && c.lastMessage && c.unreadCount > 0).length > 0 ? (
                       conversations
-                        .filter(conversation => conversation.unreadCount > 0)
+                        .filter(conversation => conversation && conversation.lastMessage && conversation.unreadCount > 0)
                         .map((conversation) => (
                           <div 
                             key={`unread-conversation-${conversation.id}`}
@@ -248,7 +255,7 @@ export default function MessagesPage() {
                                 
                                 <div className="flex items-center mt-1">
                                   <p className="text-xs text-gray-500 truncate mr-2">
-                                    {truncateText(conversation.listing.title, 20)}
+                                    {conversation.listing ? truncateText(conversation.listing.title, 20) : "No listing"}
                                   </p>
                                   
                                   <Badge className="ml-auto bg-primary text-white">
@@ -285,7 +292,7 @@ export default function MessagesPage() {
                 </div>
               )}
               
-              {activeConversation ? (
+              {activeConversation && activeConversation.otherUser && activeConversation.listing ? (
                 <ChatInterface 
                   otherUser={activeConversation.otherUser}
                   listingId={activeConversation.listing.id}
