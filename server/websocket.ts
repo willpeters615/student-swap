@@ -1,10 +1,12 @@
-import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
-import { parse } from 'url';
+import { WebSocketServer as WSServer, WebSocket } from 'ws';
+import * as ws from 'ws';
+import { log } from './vite';
 import { storage } from './storage';
+import { Message } from '@shared/schema';
 
-// Message types
-enum MessageType {
+// Message types for our WebSocket protocol
+export enum MessageType {
   CONNECT = 'connect',
   MESSAGE = 'message',
   READ_RECEIPT = 'read_receipt',
@@ -12,344 +14,276 @@ enum MessageType {
   USER_OFFLINE = 'user_offline',
   TYPING = 'typing',
   STOPPED_TYPING = 'stopped_typing',
-  ATTACHMENT = 'attachment',
   ERROR = 'error'
 }
 
-// Interface for WebSocket clients with user information
-interface Client {
-  ws: WebSocket;
-  userId: number;
-  lastActive: number;
+// Interface for WebSocket message format
+interface WebSocketMessage {
+  type: MessageType;
+  payload: any;
 }
 
-export function setupWebSocketServer(server: Server) {
-  // Create WebSocket server
-  const wss = new WebSocketServer({ 
-    server, 
-    path: '/ws' 
-  });
+// For tracking active connections
+interface Connection {
+  userId: number;
+  socket: any; // WebSocket instance
+  isAlive: boolean;
+}
+
+export class WebSocketServer {
+  private wss: WSServer;
+  private connections: Map<number, Connection> = new Map();
   
-  console.log('WebSocket server initialized');
-  
-  // Track connected clients by userId
-  const clients: Map<number, Client> = new Map();
-  
-  // Heartbeat interval to detect disconnected clients (every 30 seconds)
-  const heartbeatInterval = setInterval(() => {
-    const now = Date.now();
-    
-    // Check for inactive clients (inactive for more than 60 seconds)
-    for (const [userId, client] of clients.entries()) {
-      if (now - client.lastActive > 60000) {
-        console.log(`Client ${userId} inactive, terminating connection`);
-        client.ws.terminate();
-        clients.delete(userId);
-        
-        // Broadcast offline status
-        broadcastUserStatus(userId, false);
-      }
-    }
-  }, 30000);
-  
-  // Handle WebSocket connections
-  wss.on('connection', (ws, req) => {
-    // Parse query parameters from URL
-    const { query } = parse(req.url || '', true);
-    const userId = parseInt(query.userId as string);
-    
-    if (!userId) {
-      console.error('Connection attempt without userId');
-      ws.close(1008, 'Missing userId');
-      return;
-    }
-    
-    console.log(`User ${userId} connected to WebSocket`);
-    
-    // Register client
-    clients.set(userId, {
-      ws,
-      userId,
-      lastActive: Date.now()
+  constructor(server: Server) {
+    this.wss = new WSServer({ 
+      server, 
+      path: '/ws' // Set a specific path to avoid conflicts with Vite's WebSocket
     });
-    
-    // Broadcast online status to all clients
-    broadcastUserStatus(userId, true);
-    
-    // Send pending messages if any
-    // TODO: Implement this with the new schema
-    
-    // Handle messages
-    ws.on('message', async (data) => {
-      try {
-        const client = clients.get(userId);
-        if (!client) return;
-        
-        // Update last active timestamp
-        client.lastActive = Date.now();
-        
-        // Parse message
-        const message = JSON.parse(data.toString());
-        
-        // Process message based on type
-        switch (message.type) {
-          case MessageType.MESSAGE:
-            await handleChatMessage(userId, message);
-            break;
-            
-          case MessageType.READ_RECEIPT:
-            await handleReadReceipt(userId, message);
-            break;
-            
-          case MessageType.TYPING:
-          case MessageType.STOPPED_TYPING:
-            handleTypingStatus(userId, message);
-            break;
-            
-          case MessageType.ATTACHMENT:
-            // Attachment handling will be implemented separately
-            ws.send(JSON.stringify({
-              type: MessageType.ERROR,
-              payload: {
-                error: 'Attachment uploading requires using the /api/messages/attachment endpoint'
-              }
-            }));
-            break;
-            
-          default:
-            ws.send(JSON.stringify({
-              type: MessageType.ERROR,
-              payload: {
-                error: 'Unknown message type'
-              }
-            }));
-        }
-      } catch (error) {
-        console.error('Error processing WebSocket message:', error);
-        
-        // Send error message back to client
-        ws.send(JSON.stringify({
-          type: MessageType.ERROR,
-          payload: {
-            error: 'Failed to process message'
-          }
-        }));
-      }
-    });
-    
-    // Handle disconnections
-    ws.on('close', () => {
-      console.log(`User ${userId} disconnected from WebSocket`);
-      
-      // Remove client from registry
-      clients.delete(userId);
-      
-      // Broadcast offline status
-      broadcastUserStatus(userId, false);
-    });
-    
-    // Handle errors
-    ws.on('error', (error) => {
-      console.error(`WebSocket error for user ${userId}:`, error);
-      clients.delete(userId);
-    });
-    
-    // Send initial connection success message
-    ws.send(JSON.stringify({
-      type: MessageType.CONNECT,
-      payload: {
-        message: 'Connected to CampusSwap messaging service'
-      }
-    }));
-  });
+    this.init();
+    log('WebSocket server initialized on path: /ws', 'websocket');
+  }
   
-  // When server closes, clean up
-  server.on('close', () => {
-    clearInterval(heartbeatInterval);
-    
-    // Close all connections
-    for (const client of clients.values()) {
-      client.ws.terminate();
-    }
-    
-    clients.clear();
-  });
-  
-  // Function to handle incoming chat messages
-  async function handleChatMessage(senderId: number, message: any) {
-    try {
-      const { receiverId, listingId, content, attachmentUrl } = message.payload;
+  private init() {
+    this.wss.on('connection', (socket, request) => {
+      log('New WebSocket connection', 'websocket');
       
-      // Find or create conversation
-      let conversation = await storage.getConversationByListingAndUsers(
-        listingId,
-        senderId,
-        receiverId
-      );
+      // Set a timeout for authentication
+      const authTimeout = setTimeout(() => {
+        socket.close(1008, 'Authentication timeout');
+      }, 10000); // 10 seconds to authenticate
       
-      // If conversation doesn't exist, create a new one
-      if (!conversation) {
-        conversation = await storage.createConversation({ listingId });
-        
-        // Add both participants
-        await storage.addParticipantToConversation(conversation.id, senderId);
-        await storage.addParticipantToConversation(conversation.id, receiverId);
+      // Parse userId from query params
+      const userId = this.getUserIdFromRequest(request);
+      if (!userId) {
+        log('Authentication failed - no userId', 'websocket');
+        socket.close(1008, 'Authentication required');
+        clearTimeout(authTimeout);
+        return;
       }
       
-      // Create the new message
-      const newMessage = await storage.createMessage({
-        conversationId: conversation.id,
-        senderId,
-        content,
-        hasAttachment: !!attachmentUrl,
-        attachmentUrl: attachmentUrl || null
+      // Store connection
+      this.connections.set(userId, {
+        userId,
+        socket,
+        isAlive: true
       });
       
-      // Get all participants in this conversation
-      const participants = await storage.getConversationParticipants(conversation.id);
+      // Clear authentication timeout
+      clearTimeout(authTimeout);
       
-      // Send the message to all participants
-      for (const participant of participants) {
-        // Get the client for this participant
-        const client = clients.get(participant.userId);
-        
-        // Skip if client not found or not connected
-        if (!client || client.ws.readyState !== WebSocket.OPEN) continue;
-        
-        // Send the message
-        client.ws.send(JSON.stringify({
-          type: MessageType.MESSAGE,
-          payload: newMessage
-        }));
-      }
-    } catch (error) {
-      console.error('Error handling chat message:', error);
-      const client = clients.get(senderId);
-      
-      if (client && client.ws.readyState === WebSocket.OPEN) {
-        client.ws.send(JSON.stringify({
-          type: MessageType.ERROR,
-          payload: {
-            error: 'Failed to process message'
-          }
-        }));
-      }
-    }
-  }
-  
-  // Function to handle read receipts
-  async function handleReadReceipt(userId: number, message: any) {
-    try {
-      const { conversationId, messageId } = message.payload;
-      
-      // Mark message as read
-      if (messageId) {
-        await storage.markMessageAsRead(messageId);
-      }
-      
-      // Update participant's last read timestamp
-      if (conversationId) {
-        await storage.updateParticipantLastRead(conversationId, userId);
-      }
-      
-      // Notify other participants that message was read
-      const participants = await storage.getConversationParticipants(conversationId);
-      
-      for (const participant of participants) {
-        // Skip the current user
-        if (participant.userId === userId) continue;
-        
-        // Send read receipt to the participant if they're online
-        const client = clients.get(participant.userId);
-        if (client && client.ws.readyState === WebSocket.OPEN) {
-          client.ws.send(JSON.stringify({
-            type: MessageType.READ_RECEIPT,
-            payload: {
-              conversationId,
-              userId,
-              messageId
-            }
-          }));
+      // Setup ping/pong for connection health check
+      socket.on('pong', () => {
+        const connection = this.connections.get(userId);
+        if (connection) {
+          connection.isAlive = true;
         }
-      }
-    } catch (error) {
-      console.error('Error handling read receipt:', error);
-    }
-  }
-  
-  // Function to handle typing status
-  async function handleTypingStatus(userId: number, message: any) {
-    try {
-      const { receiverId, listingId, conversationId } = message.payload;
+      });
       
-      // If we have a conversation ID, use that to find all participants
-      if (conversationId) {
-        const participants = await storage.getConversationParticipants(conversationId);
-        
-        // Send typing status to all participants except the sender
-        for (const participant of participants) {
-          // Skip the user who is typing
-          if (participant.userId === userId) continue;
-          
-          const client = clients.get(participant.userId);
-          if (client && client.ws.readyState === WebSocket.OPEN) {
-            client.ws.send(JSON.stringify({
-              type: message.type, // TYPING or STOPPED_TYPING
-              payload: {
-                senderId: userId,
-                conversationId
-              }
-            }));
-          }
+      // Broadcast user online
+      this.broadcastUserStatus(userId, true);
+      
+      // Handle incoming messages
+      socket.on('message', (data) => {
+        try {
+          const message = JSON.parse(data.toString()) as WebSocketMessage;
+          this.handleIncomingMessage(userId, message);
+        } catch (error) {
+          log(`Error handling message: ${error}`, 'websocket');
+          this.sendError(socket, 'Invalid message format');
         }
-      } 
-      // If we only have receiverId/listingId, send directly to the receiver
-      else if (receiverId && listingId) {
-        // First try to find an existing conversation
-        const conversation = await storage.getConversationByListingAndUsers(
-          listingId,
-          userId,
-          receiverId
-        );
-        
-        // If conversation exists, use that ID in the typing status
-        const typingPayload = conversation 
-          ? { senderId: userId, conversationId: conversation.id }
-          : { senderId: userId, listingId };
-        
-        // Send to the specific recipient
-        const recipient = clients.get(receiverId);
-        if (recipient && recipient.ws.readyState === WebSocket.OPEN) {
-          recipient.ws.send(JSON.stringify({
-            type: message.type, // TYPING or STOPPED_TYPING
-            payload: typingPayload
-          }));
-        }
-      }
-    } catch (error) {
-      console.error('Error handling typing status:', error);
-    }
-  }
-  
-  // Function to broadcast user status (online/offline)
-  function broadcastUserStatus(userId: number, isOnline: boolean) {
-    const statusType = isOnline ? MessageType.USER_ONLINE : MessageType.USER_OFFLINE;
+      });
+      
+      // Handle disconnection
+      socket.on('close', () => {
+        log(`User ${userId} disconnected`, 'websocket');
+        this.connections.delete(userId);
+        this.broadcastUserStatus(userId, false);
+      });
+    });
     
-    // Broadcast to all connected clients
-    for (const client of clients.values()) {
-      // Skip broadcasting to the user themself
-      if (client.userId === userId) continue;
+    // Set up interval to check connection health
+    setInterval(() => {
+      this.wss.clients.forEach((socket) => {
+        if ((socket as any).isAlive === false) {
+          return socket.terminate();
+        }
+        
+        (socket as any).isAlive = false;
+        socket.ping();
+      });
+    }, 30000); // Check every 30 seconds
+  }
+  
+  private getUserIdFromRequest(request: any): number | null {
+    try {
+      const url = new URL(request.url || '', `http://${request.headers.host}`);
+      const userId = url.searchParams.get('userId');
+      if (!userId) return null;
       
-      if (client.ws.readyState === WebSocket.OPEN) {
-        client.ws.send(JSON.stringify({
-          type: statusType,
-          payload: {
-            userId
-          }
-        }));
-      }
+      const parsedId = parseInt(userId);
+      if (isNaN(parsedId)) return null;
+      
+      return parsedId;
+    } catch (error) {
+      log(`Error parsing userId: ${error}`, 'websocket');
+      return null;
     }
   }
   
-  return wss;
+  private async handleIncomingMessage(senderId: number, wsMessage: WebSocketMessage) {
+    switch (wsMessage.type) {
+      case MessageType.MESSAGE:
+        await this.handleChatMessage(senderId, wsMessage.payload);
+        break;
+      case MessageType.READ_RECEIPT:
+        await this.handleReadReceipt(senderId, wsMessage.payload);
+        break;
+      case MessageType.TYPING:
+        this.handleTypingIndicator(senderId, wsMessage.payload, true);
+        break;
+      case MessageType.STOPPED_TYPING:
+        this.handleTypingIndicator(senderId, wsMessage.payload, false);
+        break;
+      default:
+        log(`Unknown message type: ${wsMessage.type}`, 'websocket');
+    }
+  }
+  
+  private async handleChatMessage(senderId: number, payload: any) {
+    try {
+      // Extract message data
+      const { receiverId, listingId, content } = payload;
+      
+      if (!receiverId || !listingId || !content) {
+        log('Invalid message payload', 'websocket');
+        return;
+      }
+      
+      // Save message to database
+      console.log(`Creating message: senderId=${senderId}, receiverId=${receiverId}, listingId=${listingId}, content=${content}`);
+      
+      const message = await storage.createMessage({
+        senderId,
+        receiverId,
+        listingId,
+        content,
+        read: false
+      });
+      
+      console.log(`Message created with ID: ${message.id}`);
+      console.log(JSON.stringify(message, null, 2));
+      
+      // Send to recipient if online
+      this.sendToUser(receiverId, {
+        type: MessageType.MESSAGE,
+        payload: message
+      });
+      
+      // Also send back to sender for confirmation
+      this.sendToUser(senderId, {
+        type: MessageType.MESSAGE,
+        payload: message
+      });
+      
+      log(`Message from user ${senderId} to ${receiverId} sent`, 'websocket');
+    } catch (error) {
+      log(`Error sending message: ${error}`, 'websocket');
+    }
+  }
+  
+  private async handleReadReceipt(userId: number, payload: any) {
+    try {
+      const { messageId } = payload;
+      
+      if (!messageId) {
+        log('Invalid read receipt payload', 'websocket');
+        return;
+      }
+      
+      // Update message read status
+      const message = await storage.markMessageAsRead(messageId);
+      
+      if (message && message.senderId !== null && message.senderId !== undefined) {
+        // Notify the original sender their message was read
+        this.sendToUser(message.senderId as number, {
+          type: MessageType.READ_RECEIPT,
+          payload: { messageId }
+        });
+      }
+    } catch (error) {
+      log(`Error processing read receipt: ${error}`, 'websocket');
+    }
+  }
+  
+  private handleTypingIndicator(senderId: number, payload: any, isTyping: boolean) {
+    try {
+      const { receiverId, listingId } = payload;
+      
+      if (!receiverId || !listingId) {
+        log('Invalid typing indicator payload', 'websocket');
+        return;
+      }
+      
+      // Send typing indicator to recipient
+      this.sendToUser(receiverId, {
+        type: isTyping ? MessageType.TYPING : MessageType.STOPPED_TYPING,
+        payload: { senderId, listingId }
+      });
+    } catch (error) {
+      log(`Error sending typing indicator: ${error}`, 'websocket');
+    }
+  }
+  
+  private broadcastUserStatus(userId: number, isOnline: boolean) {
+    const messageType = isOnline ? MessageType.USER_ONLINE : MessageType.USER_OFFLINE;
+    
+    // Broadcast to all connected users
+    this.connections.forEach((connection) => {
+      if (connection.userId !== userId) {
+        this.sendToUser(connection.userId, {
+          type: messageType,
+          payload: { userId }
+        });
+      }
+    });
+  }
+  
+  private sendToUser(userId: number, message: WebSocketMessage) {
+    const connection = this.connections.get(userId);
+    
+    if (connection && connection.socket.readyState === WebSocket.OPEN) {
+      connection.socket.send(JSON.stringify(message));
+    }
+  }
+  
+  private sendError(socket: any, errorMessage: string) {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: MessageType.ERROR,
+        payload: { message: errorMessage }
+      }));
+    }
+  }
+  
+  public isUserOnline(userId: number): boolean {
+    return this.connections.has(userId);
+  }
+  
+  public getOnlineUsers(): number[] {
+    return Array.from(this.connections.keys());
+  }
+}
+
+// Create and export the WebSocket service
+let wsServer: WebSocketServer | null = null;
+
+export function setupWebSocketServer(server: Server): WebSocketServer {
+  if (!wsServer) {
+    wsServer = new WebSocketServer(server);
+  }
+  return wsServer;
+}
+
+export function getWebSocketServer(): WebSocketServer | null {
+  return wsServer;
 }
