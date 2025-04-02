@@ -46,7 +46,7 @@ interface TypingStatus {
 
 type WebSocketContextType = {
   connected: boolean;
-  sendMessage: (receiverId: number, listingId: number, content: string) => void;
+  sendMessage: (receiverId: number, listingId: number, content: string, conversationId?: number) => void;
   markAsRead: (messageId: number) => void;
   setTyping: (receiverId: number, targetId: number, isTyping: boolean) => void;
   clearMessages: (conversationId: number) => void;
@@ -258,7 +258,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   };
   
   // Send a message
-  const sendMessage = (receiverId: number, listingId: number, content: string) => {
+  const sendMessage = (receiverId: number, listingId: number, content: string, conversationId?: number) => {
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
       toast({
         title: 'Connection Error',
@@ -273,10 +273,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       payload: {
         receiverId,
         listingId,
-        content
+        content,
+        // If we have a conversation ID, include it in the payload
+        ...(conversationId && { conversationId })
       }
     };
     
+    console.log('Sending message:', message);
     socket.current.send(JSON.stringify(message));
   };
   

@@ -182,17 +182,58 @@ export class WebSocketServer {
   private async handleChatMessage(senderId: number, payload: any) {
     try {
       // Extract message data
-      const { conversationId, content, attachment } = payload;
+      const { conversationId, receiverId, listingId, content, attachment } = payload;
       
-      if (!conversationId || !content) {
-        log('Invalid message payload', 'websocket');
+      // Handle the message differently based on whether we have a conversation ID or not
+      let effectiveConversationId = conversationId;
+      
+      // If no conversationId is provided but we have receiverId, try to find or create a conversation
+      if (!effectiveConversationId && receiverId) {
+        log(`No conversationId provided, looking up conversation between ${senderId} and ${receiverId}`, 'websocket');
+        
+        // Try to find an existing conversation between these users for this listing
+        const existingConversation = await storage.getConversationByParticipants(senderId, receiverId, listingId);
+        
+        if (existingConversation) {
+          // Use the existing conversation
+          effectiveConversationId = existingConversation.id;
+          log(`Found existing conversation ${effectiveConversationId}`, 'websocket');
+        } else {
+          // Create a new conversation
+          log(`Creating new conversation between ${senderId} and ${receiverId}`, 'websocket');
+          const newConversation = await storage.createConversation({
+            listingId: listingId || null,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+          
+          // Add participants
+          await storage.addParticipantToConversation({
+            conversationId: newConversation.id,
+            userId: senderId,
+            lastReadAt: new Date()
+          });
+          
+          await storage.addParticipantToConversation({
+            conversationId: newConversation.id,
+            userId: receiverId,
+            lastReadAt: null
+          });
+          
+          effectiveConversationId = newConversation.id;
+          log(`Created new conversation ${effectiveConversationId}`, 'websocket');
+        }
+      }
+      
+      if (!effectiveConversationId || !content) {
+        log('Invalid message payload: missing conversationId or content', 'websocket');
         return;
       }
       
       // Verify sender is part of the conversation
-      const isParticipant = await this.isUserInConversation(senderId, conversationId);
+      const isParticipant = await this.isUserInConversation(senderId, effectiveConversationId);
       if (!isParticipant) {
-        log(`User ${senderId} attempted to send message to conversation ${conversationId} they're not part of`, 'websocket');
+        log(`User ${senderId} attempted to send message to conversation ${effectiveConversationId} they're not part of`, 'websocket');
         
         const connection = this.connections.get(senderId);
         if (connection) {
@@ -214,7 +255,7 @@ export class WebSocketServer {
       
       // Save message to database using storage layer
       const messageData: InsertMessage = {
-        conversationId,
+        conversationId: effectiveConversationId,
         senderId,
         content,
         hasAttachment,
@@ -222,18 +263,16 @@ export class WebSocketServer {
         readAt: null
       };
       
-      console.log(`Creating message in conversation ${conversationId} from user ${senderId}: ${content}`);
+      console.log(`Creating message in conversation ${effectiveConversationId} from user ${senderId}: ${content}`);
       
       // Insert message
       const message = await storage.createMessage(messageData);
       
       // Update conversation's updatedAt timestamp
-      if (conversationId) {
-        await storage.updateConversationTimestamp(conversationId);
-      }
+      await storage.updateConversationTimestamp(effectiveConversationId);
       
       // Get all participants in this conversation
-      const participants = await storage.getConversationParticipants(conversationId);
+      const participants = await storage.getConversationParticipants(effectiveConversationId);
       
       // Broadcast message to all participants
       for (const participant of participants) {
@@ -246,7 +285,7 @@ export class WebSocketServer {
             type: MessageType.MESSAGE,
             payload: {
               message,
-              conversationId
+              conversationId: effectiveConversationId
             }
           });
         }
@@ -257,11 +296,11 @@ export class WebSocketServer {
         type: MessageType.MESSAGE,
         payload: {
           message,
-          conversationId
+          conversationId: effectiveConversationId
         }
       });
       
-      log(`Message in conversation ${conversationId} from user ${senderId} sent`, 'websocket');
+      log(`Message in conversation ${effectiveConversationId} from user ${senderId} sent`, 'websocket');
     } catch (error) {
       log(`Error sending message: ${error}`, 'websocket');
     }

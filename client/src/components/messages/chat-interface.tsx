@@ -119,7 +119,13 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
     // Use conversation ID if available, otherwise fall back to listing ID
     const targetId = conversationId || listingId;
     
-    sendMessage(safeOtherUser.id, listingId, message.trim());
+    // If we have a conversation ID, use it directly, otherwise use receiver and listing
+    if (conversationId) {
+      sendMessage(safeOtherUser.id, listingId, message.trim(), conversationId);
+    } else {
+      sendMessage(safeOtherUser.id, listingId, message.trim());
+    }
+    
     setMessage('');
     
     // Clear typing indicator immediately after sending
