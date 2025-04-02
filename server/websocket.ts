@@ -17,7 +17,8 @@ export enum MessageType {
   USER_OFFLINE = 'user_offline',
   TYPING = 'typing',
   STOPPED_TYPING = 'stopped_typing',
-  ERROR = 'error'
+  ERROR = 'error',
+  NEW_MESSAGE = 'new_message' // Add new_message type
 }
 
 // Interface for WebSocket message format
@@ -373,7 +374,7 @@ export class WebSocketServer {
     });
   }
   
-  private sendToUser(userId: number | null, message: WebSocketMessage) {
+  public sendToUser(userId: number | null, message: WebSocketMessage) {
     if (userId === null) return;
     
     const connection = this.connections.get(userId);
