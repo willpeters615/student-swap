@@ -3,7 +3,10 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import * as ws from 'ws';
 import { log } from './vite';
 import { storage } from './storage';
-import { Message } from '@shared/schema';
+import { Message, InsertMessage } from '@shared/schema';
+import { db } from './db';
+import { eq, and } from 'drizzle-orm/expressions';
+import { conversationParticipants, messages } from '@shared/schema';
 
 // Message types for our WebSocket protocol
 export enum MessageType {
@@ -26,8 +29,9 @@ interface WebSocketMessage {
 // For tracking active connections
 interface Connection {
   userId: number;
-  socket: any; // WebSocket instance
+  socket: WebSocket;
   isAlive: boolean;
+  subscribedConversations: Set<number>;
 }
 
 export class WebSocketServer {
@@ -44,7 +48,7 @@ export class WebSocketServer {
   }
   
   private init() {
-    this.wss.on('connection', (socket, request) => {
+    this.wss.on('connection', async (socket, request) => {
       log('New WebSocket connection', 'websocket');
       
       // Set a timeout for authentication
@@ -61,11 +65,15 @@ export class WebSocketServer {
         return;
       }
       
+      // Find all conversations this user participates in
+      const userConversations = await this.getUserConversations(userId);
+      
       // Store connection
       this.connections.set(userId, {
         userId,
         socket,
-        isAlive: true
+        isAlive: true,
+        subscribedConversations: new Set(userConversations)
       });
       
       // Clear authentication timeout
@@ -76,6 +84,15 @@ export class WebSocketServer {
         const connection = this.connections.get(userId);
         if (connection) {
           connection.isAlive = true;
+        }
+      });
+      
+      // Send connect message to client
+      this.sendToUser(userId, {
+        type: MessageType.CONNECT,
+        payload: {
+          userId,
+          conversations: Array.from(userConversations)
         }
       });
       
@@ -130,6 +147,17 @@ export class WebSocketServer {
     }
   }
   
+  private async getUserConversations(userId: number): Promise<number[]> {
+    try {
+      // Use storage layer to get all conversations for this user
+      const conversations = await storage.getConversationsByUserId(userId);
+      return conversations.map(c => c.id).filter((id): id is number => id !== null);
+    } catch (error) {
+      log(`Error getting user conversations: ${error}`, 'websocket');
+      return [];
+    }
+  }
+  
   private async handleIncomingMessage(senderId: number, wsMessage: WebSocketMessage) {
     switch (wsMessage.type) {
       case MessageType.MESSAGE:
@@ -152,62 +180,136 @@ export class WebSocketServer {
   private async handleChatMessage(senderId: number, payload: any) {
     try {
       // Extract message data
-      const { receiverId, listingId, content } = payload;
+      const { conversationId, content, attachment } = payload;
       
-      if (!receiverId || !listingId || !content) {
+      if (!conversationId || !content) {
         log('Invalid message payload', 'websocket');
         return;
       }
       
-      // Save message to database
-      console.log(`Creating message: senderId=${senderId}, receiverId=${receiverId}, listingId=${listingId}, content=${content}`);
+      // Verify sender is part of the conversation
+      const isParticipant = await this.isUserInConversation(senderId, conversationId);
+      if (!isParticipant) {
+        log(`User ${senderId} attempted to send message to conversation ${conversationId} they're not part of`, 'websocket');
+        
+        const connection = this.connections.get(senderId);
+        if (connection) {
+          this.sendError(connection.socket, 'Not authorized to send messages in this conversation');
+        }
+        return;
+      }
       
-      const message = await storage.createMessage({
+      // Process attachment if present
+      let attachmentUrl = null;
+      let hasAttachment = false;
+      
+      if (attachment && attachment.data) {
+        // This would normally handle file uploads, but for simplicity we're
+        // just setting a flag that an attachment exists
+        hasAttachment = true;
+        attachmentUrl = attachment.url || null;
+      }
+      
+      // Save message to database using storage layer
+      const messageData: InsertMessage = {
+        conversationId,
         senderId,
-        receiverId,
-        listingId,
         content,
-        read: false
-      });
+        hasAttachment,
+        attachmentUrl,
+        readAt: null
+      };
       
-      console.log(`Message created with ID: ${message.id}`);
-      console.log(JSON.stringify(message, null, 2));
+      console.log(`Creating message in conversation ${conversationId} from user ${senderId}: ${content}`);
       
-      // Send to recipient if online
-      this.sendToUser(receiverId, {
-        type: MessageType.MESSAGE,
-        payload: message
-      });
+      // Insert message
+      const message = await storage.createMessage(messageData);
+      
+      // Update conversation's updatedAt timestamp
+      if (conversationId) {
+        await storage.updateConversationTimestamp(conversationId);
+      }
+      
+      // Get all participants in this conversation
+      const participants = await storage.getConversationParticipants(conversationId);
+      
+      // Broadcast message to all participants
+      for (const participant of participants) {
+        // Skip sender
+        if (participant.userId === senderId) continue;
+        
+        // Send to participant if online and userId is not null
+        if (participant.userId !== null) {
+          this.sendToUser(participant.userId, {
+            type: MessageType.MESSAGE,
+            payload: {
+              message,
+              conversationId
+            }
+          });
+        }
+      }
       
       // Also send back to sender for confirmation
       this.sendToUser(senderId, {
         type: MessageType.MESSAGE,
-        payload: message
+        payload: {
+          message,
+          conversationId
+        }
       });
       
-      log(`Message from user ${senderId} to ${receiverId} sent`, 'websocket');
+      log(`Message in conversation ${conversationId} from user ${senderId} sent`, 'websocket');
     } catch (error) {
       log(`Error sending message: ${error}`, 'websocket');
     }
   }
   
+  private async isUserInConversation(userId: number, conversationId: number): Promise<boolean> {
+    try {
+      // Use storage layer to get participants
+      const participants = await storage.getConversationParticipants(conversationId);
+      return participants.some(p => p.userId === userId);
+    } catch (error) {
+      log(`Error checking if user is in conversation: ${error}`, 'websocket');
+      return false;
+    }
+  }
+  
   private async handleReadReceipt(userId: number, payload: any) {
     try {
-      const { messageId } = payload;
+      const { conversationId } = payload;
       
-      if (!messageId) {
+      if (!conversationId) {
         log('Invalid read receipt payload', 'websocket');
         return;
       }
       
-      // Update message read status
-      const message = await storage.markMessageAsRead(messageId);
+      // Verify user is part of the conversation
+      const isParticipant = await this.isUserInConversation(userId, conversationId);
+      if (!isParticipant) {
+        log(`User ${userId} attempted to mark messages as read in conversation ${conversationId} they're not part of`, 'websocket');
+        return;
+      }
       
-      if (message && message.senderId !== null && message.senderId !== undefined) {
-        // Notify the original sender their message was read
-        this.sendToUser(message.senderId as number, {
+      // Update last read timestamp
+      await storage.markConversationAsRead(conversationId, userId);
+      
+      // Get all participants in this conversation
+      const participants = await storage.getConversationParticipants(conversationId);
+      
+      // Notify other participants
+      for (const participant of participants) {
+        // Skip the user who marked as read
+        if (participant.userId === userId) continue;
+        
+        // Send read receipt to participant if online
+        this.sendToUser(participant.userId, {
           type: MessageType.READ_RECEIPT,
-          payload: { messageId }
+          payload: {
+            conversationId,
+            userId
+          }
         });
       }
     } catch (error) {
@@ -217,20 +319,43 @@ export class WebSocketServer {
   
   private handleTypingIndicator(senderId: number, payload: any, isTyping: boolean) {
     try {
-      const { receiverId, listingId } = payload;
+      const { conversationId } = payload;
       
-      if (!receiverId || !listingId) {
+      if (!conversationId) {
         log('Invalid typing indicator payload', 'websocket');
         return;
       }
       
-      // Send typing indicator to recipient
-      this.sendToUser(receiverId, {
+      // Send typing indicator to all participants in the conversation
+      this.broadcastToConversation(conversationId, senderId, {
         type: isTyping ? MessageType.TYPING : MessageType.STOPPED_TYPING,
-        payload: { senderId, listingId }
+        payload: {
+          conversationId,
+          userId: senderId
+        }
       });
     } catch (error) {
       log(`Error sending typing indicator: ${error}`, 'websocket');
+    }
+  }
+  
+  private async broadcastToConversation(
+    conversationId: number, 
+    excludeUserId: number, 
+    message: WebSocketMessage
+  ) {
+    try {
+      // Get all participants in this conversation
+      const participants = await storage.getConversationParticipants(conversationId);
+      
+      // Send to all participants except the excluded user
+      for (const participant of participants) {
+        if (participant.userId !== excludeUserId) {
+          this.sendToUser(participant.userId, message);
+        }
+      }
+    } catch (error) {
+      log(`Error broadcasting to conversation: ${error}`, 'websocket');
     }
   }
   
@@ -248,7 +373,9 @@ export class WebSocketServer {
     });
   }
   
-  private sendToUser(userId: number, message: WebSocketMessage) {
+  private sendToUser(userId: number | null, message: WebSocketMessage) {
+    if (userId === null) return;
+    
     const connection = this.connections.get(userId);
     
     if (connection && connection.socket.readyState === WebSocket.OPEN) {
@@ -256,7 +383,7 @@ export class WebSocketServer {
     }
   }
   
-  private sendError(socket: any, errorMessage: string) {
+  private sendError(socket: WebSocket, errorMessage: string) {
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({
         type: MessageType.ERROR,
@@ -271,6 +398,13 @@ export class WebSocketServer {
   
   public getOnlineUsers(): number[] {
     return Array.from(this.connections.keys());
+  }
+  
+  public addUserToConversation(userId: number, conversationId: number) {
+    const connection = this.connections.get(userId);
+    if (connection) {
+      connection.subscribedConversations.add(conversationId);
+    }
   }
 }
 
