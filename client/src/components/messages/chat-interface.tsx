@@ -62,9 +62,18 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   
   useEffect(() => {
     if (messages && user) {
-      (messages as unknown as NewMessage[]).forEach(msg => {
-        // readAt is null means message is unread
-        if (msg.senderId !== user.id && !msg.readAt) {
+      // Create a Set to track processed messages and avoid duplicates
+      const processedMessageIds = new Set<number>();
+      
+      messages.forEach(msg => {
+        // Skip if we've already processed this message
+        if (processedMessageIds.has(msg.id)) return;
+        
+        // Add to processed set
+        processedMessageIds.add(msg.id);
+        
+        // Only mark other people's unread messages as read
+        if (msg.senderId !== user.id && !(msg as unknown as NewMessage).readAt) {
           markAsRead(msg.id);
         }
       });
@@ -80,12 +89,15 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
       clearTimeout(typingTimeoutRef.current);
     }
     
+    // Use conversation ID if available, otherwise fall back to listing ID
+    const targetId = conversationId || listingId;
+    
     // Set typing status to true
-    setTyping(safeOtherUser.id, listingId, true);
+    setTyping(safeOtherUser.id, targetId, true);
     
     // Set a timeout to set typing status to false after 2 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
-      setTyping(safeOtherUser.id, listingId, false);
+      setTyping(safeOtherUser.id, targetId, false);
     }, 2000);
   };
   
@@ -93,11 +105,14 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   const handleSendMessage = () => {
     if (!message.trim() || !user) return;
     
+    // Use conversation ID if available, otherwise fall back to listing ID
+    const targetId = conversationId || listingId;
+    
     sendMessage(safeOtherUser.id, listingId, message.trim());
     setMessage('');
     
     // Clear typing indicator immediately after sending
-    setTyping(safeOtherUser.id, listingId, false);
+    setTyping(safeOtherUser.id, targetId, false);
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
@@ -115,7 +130,11 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
   
   // Check if the other user is currently typing in this conversation
-  const isOtherUserTyping = typingUsers[`${safeOtherUser.id}-${listingId}`];
+  // First try conversation-based format, then fall back to the legacy user-listing format
+  const conversationId = messages && messages.length > 0 ? messages[0].conversationId : null;
+  const isOtherUserTyping = conversationId 
+    ? typingUsers[`${safeOtherUser.id}-${conversationId}`] 
+    : typingUsers[`${safeOtherUser.id}-${listingId}`];
   
   // Check if the other user is online
   const isOtherUserOnline = onlineUsers[safeOtherUser.id] || false;
