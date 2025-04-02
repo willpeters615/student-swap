@@ -8,9 +8,9 @@ import {
   experienceCategories 
 } from "@shared/schema";
 
-export type ViewMode = "grid" | "list";
-export type SortOption = "newest" | "price_asc" | "price_desc";
-export type DistanceOption = "less_than_1" | "1_to_3" | "3_to_5" | "any";
+type ViewMode = "grid" | "list";
+type SortOption = "newest" | "price_asc" | "price_desc";
+type DistanceOption = "less_than_1" | "1_to_3" | "3_to_5" | "any";
 
 interface FilterContextType {
   // View and sort options
@@ -24,10 +24,6 @@ interface FilterContextType {
   setActiveListingType: (type: ListingType) => void;
   activeCategory: string;
   setActiveCategory: (category: string) => void;
-  
-  // User listing toggle
-  hideMyListings: boolean;
-  setHideMyListings: (hide: boolean) => void;
   
   // Advanced filters
   filters: {
@@ -49,8 +45,6 @@ export const FilterContext = createContext<FilterContextType>({
   setActiveListingType: () => {},
   activeCategory: "All",
   setActiveCategory: () => {},
-  hideMyListings: false,
-  setHideMyListings: () => {},
   filters: {
     minPrice: "",
     maxPrice: "",
@@ -70,7 +64,6 @@ export function FilterProvider({ children }: FilterProviderProps) {
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [activeListingType, setActiveListingType] = useState<ListingType>("item");
   const [activeCategory, setActiveCategory] = useState<string>("All");
-  const [hideMyListings, setHideMyListings] = useState<boolean>(false);
   const [filters, setFilters] = useState({
     minPrice: "",
     maxPrice: "",
@@ -90,8 +83,6 @@ export function FilterProvider({ children }: FilterProviderProps) {
         setActiveListingType,
         activeCategory,
         setActiveCategory,
-        hideMyListings,
-        setHideMyListings,
         filters,
         setFilters,
       }}
