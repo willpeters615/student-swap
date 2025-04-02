@@ -25,6 +25,10 @@ interface FilterContextType {
   activeCategory: string;
   setActiveCategory: (category: string) => void;
   
+  // Owner filter
+  hideOwnListings: boolean;
+  setHideOwnListings: (hide: boolean) => void;
+  
   // Advanced filters
   filters: {
     minPrice: string;
@@ -45,6 +49,8 @@ export const FilterContext = createContext<FilterContextType>({
   setActiveListingType: () => {},
   activeCategory: "All",
   setActiveCategory: () => {},
+  hideOwnListings: false,
+  setHideOwnListings: () => {},
   filters: {
     minPrice: "",
     maxPrice: "",
@@ -64,6 +70,7 @@ export function FilterProvider({ children }: FilterProviderProps) {
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [activeListingType, setActiveListingType] = useState<ListingType>("item");
   const [activeCategory, setActiveCategory] = useState<string>("All");
+  const [hideOwnListings, setHideOwnListings] = useState(false);
   const [filters, setFilters] = useState({
     minPrice: "",
     maxPrice: "",
@@ -83,6 +90,8 @@ export function FilterProvider({ children }: FilterProviderProps) {
         setActiveListingType,
         activeCategory,
         setActiveCategory,
+        hideOwnListings,
+        setHideOwnListings,
         filters,
         setFilters,
       }}

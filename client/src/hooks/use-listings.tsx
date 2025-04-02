@@ -14,7 +14,8 @@ export function useListings() {
     activeCategory,
     activeListingType,
     sortBy, 
-    filters 
+    filters,
+    hideOwnListings
   } = useContext(FilterContext);
 
   // Get all listings with search if available
@@ -110,6 +111,13 @@ export function useListings() {
         listing => listing.category && filters.categories.includes(listing.category)
       );
     }
+    
+    // Hide own listings if the toggle is active and user is logged in
+    if (hideOwnListings && user) {
+      filteredListings = filteredListings.filter(
+        listing => listing.userId !== user.id
+      );
+    }
 
     // Sort listings
     switch (sortBy) {
@@ -125,7 +133,7 @@ export function useListings() {
           return dateB - dateA;
         });
     }
-  }, [allListings, activeListingType, activeCategory, searchQuery, filters, sortBy]);
+  }, [allListings, activeListingType, activeCategory, searchQuery, filters, sortBy, hideOwnListings, user]);
 
   return {
     listings,
