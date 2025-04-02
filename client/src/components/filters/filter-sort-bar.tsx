@@ -1,57 +1,32 @@
 import { useContext } from "react";
 import { FilterContext } from "@/contexts/filter-context";
-import type { SortOption } from "@/contexts/filter-context";
-import { Filter, Grid2X2, List, Eye, EyeOff } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import { Filter, Grid2X2, List } from "lucide-react";
 
 interface FilterSortBarProps {
   onOpenFilterModal: () => void;
 }
 
 export default function FilterSortBar({ onOpenFilterModal }: FilterSortBarProps) {
-  const { user } = useAuth();
   const { 
     viewMode, 
     setViewMode, 
     sortBy, 
-    setSortBy,
-    hideMyListings,
-    setHideMyListings
+    setSortBy 
   } = useContext(FilterContext);
 
   return (
     <div className="bg-white border-b mb-4 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
-        <div className="flex items-center gap-4">
-          <button 
-            className="flex items-center text-sm text-gray-600 font-medium" 
-            onClick={onOpenFilterModal}
-          >
-            <Filter className="h-5 w-5 mr-1" />
-            Filters
-          </button>
-          
-          {user && (
-            <div className="flex items-center gap-2">
-              {hideMyListings ? <EyeOff className="h-4 w-4 text-gray-500" /> : <Eye className="h-4 w-4 text-gray-500" />}
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="hide-my-listings"
-                  checked={hideMyListings}
-                  onCheckedChange={setHideMyListings}
-                />
-                <Label htmlFor="hide-my-listings" className="text-sm text-gray-600">
-                  Hide my listings
-                </Label>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+        <button 
+          className="flex items-center text-sm text-gray-600 font-medium" 
+          onClick={onOpenFilterModal}
+        >
+          <Filter className="h-5 w-5 mr-1" />
+          Filters
+        </button>
         
         <div className="flex items-center space-x-3">
-          <span className="text-sm text-gray-600 hidden sm:inline">View:</span>
+          <span className="text-sm text-gray-600">View:</span>
           <button 
             className={`p-1.5 rounded-md ${viewMode === 'grid' ? 'bg-primary bg-opacity-10' : 'text-gray-500 hover:bg-gray-100'}`}
             onClick={() => setViewMode('grid')}
@@ -70,7 +45,7 @@ export default function FilterSortBar({ onOpenFilterModal }: FilterSortBarProps)
           <select
             className="flex items-center text-sm text-gray-600 font-medium bg-transparent appearance-none pr-6 focus:outline-none"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            onChange={(e) => setSortBy(e.target.value)}
           >
             <option value="newest">Sort: Newest</option>
             <option value="price_asc">Sort: Price (Low to High)</option>
