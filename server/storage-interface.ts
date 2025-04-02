@@ -39,6 +39,7 @@ export interface IStorage {
   // Conversation operations (new messaging system)
   getConversation(id: number): Promise<Conversation | undefined>;
   getConversationsByUserId(userId: number): Promise<Conversation[]>;
+  getConversations(): Promise<Conversation[]>; // Get all conversations
   getConversationByParticipants(userId1: number, userId2: number, listingId?: number): Promise<Conversation | undefined>;
   createConversation(conversation: InsertConversation): Promise<Conversation>;
   addParticipantToConversation(participant: InsertConversationParticipant): Promise<ConversationParticipant>;

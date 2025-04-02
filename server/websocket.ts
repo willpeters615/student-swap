@@ -23,7 +23,7 @@ export enum MessageType {
 }
 
 // Interface for WebSocket message format
-interface WebSocketMessage {
+export interface WebSocketMessage {
   type: MessageType;
   payload: any;
 }
@@ -408,6 +408,15 @@ export class WebSocketServer {
     if (connection) {
       connection.subscribedConversations.add(conversationId);
     }
+  }
+  
+  // Broadcast a message to all connected clients
+  public broadcast(message: WebSocketMessage) {
+    this.connections.forEach((connection) => {
+      if (connection.socket.readyState === WebSocket.OPEN) {
+        connection.socket.send(JSON.stringify(message));
+      }
+    });
   }
 }
 

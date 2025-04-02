@@ -358,6 +358,14 @@ export class MemStorage implements IStorage {
       );
   }
   
+  async getConversations(): Promise<Conversation[]> {
+    // Return all conversations
+    return Array.from(this.conversations.values())
+      .sort((a, b) => 
+        (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0)
+      );
+  }
+  
   async getConversationByParticipants(userId1: number, userId2: number, listingId?: number): Promise<Conversation | undefined> {
     // Get all conversations that userId1 participates in
     const user1ConversationIds = new Set(
@@ -768,6 +776,14 @@ export class DatabaseStorage implements IStorage {
       .where(
         inArray(conversations.id, conversationIds)
       )
+      .orderBy(desc(conversations.updatedAt));
+  }
+  
+  async getConversations(): Promise<Conversation[]> {
+    // Get all conversations
+    return this.db
+      .select()
+      .from(conversations)
       .orderBy(desc(conversations.updatedAt));
   }
   

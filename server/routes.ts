@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertListingSchema, insertFavoriteSchema, insertMessageSchema, insertConversationSchema, insertConversationParticipantSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth } from "./auth";
-import { setupWebSocketServer, getWebSocketServer, MessageType } from "./websocket";
+import { setupWebSocketServer, getWebSocketServer, MessageType, WebSocketMessage } from "./websocket";
 import { migrateMessagingSystem } from "./db-migration";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -816,6 +816,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting messages:", error);
       res.status(500).json({ error: "Failed to delete messages" });
+    }
+  });
+
+  // TESTING ONLY: Drop all conversations and messages data
+  app.delete("/api/test/drop-messages", async (req, res) => {
+    try {
+      console.log("TEST ROUTE: Dropping all conversations and messages data");
+      
+      // Get all conversations
+      const allConversations = await storage.getConversations();
+      
+      if (!allConversations || allConversations.length === 0) {
+        return res.status(200).json({ message: "No conversations found to delete" });
+      }
+      
+      // Delete all messages from each conversation
+      for (const conversation of allConversations) {
+        await storage.deleteConversationMessages(conversation.id);
+        console.log(`Deleted all messages from conversation ${conversation.id}`);
+      }
+      
+      // Notify all connected WebSocket clients
+      const wss = getWebSocketServer();
+      if (wss) {
+        wss.broadcast({
+          type: MessageType.MESSAGES_CLEARED,
+          payload: {
+            message: "All conversations cleared"
+          }
+        });
+      }
+      
+      res.status(200).json({ 
+        success: true, 
+        message: `Dropped messages from ${allConversations.length} conversations` 
+      });
+    } catch (error) {
+      console.error("Error in test route for dropping messages:", error);
+      res.status(500).json({ error: "Failed to delete test data" });
     }
   });
 
