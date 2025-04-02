@@ -22,13 +22,14 @@ import { Loader2 } from "lucide-react";
 
 // Types for conversation and message
 interface Conversation {
+  id: number;
   otherUser: {
     id: number;
     username: string;
     email: string;
     university: string;
-    verified?: boolean | null;
-    createdAt?: Date | null;
+    verified: boolean | null;
+    createdAt: Date | null;
   };
   listing: {
     id: number;
@@ -45,6 +46,7 @@ interface Conversation {
     receiverId: number;
   };
   unreadCount: number;
+  updatedAt?: string;
 }
 
 interface Message {
@@ -147,11 +149,10 @@ export default function MessagesPage() {
                     ) : conversations && conversations.length > 0 ? (
                       conversations.map((conversation) => (
                         <div 
-                          key={`${conversation.otherUser.id}-${conversation.listing.id}`}
+                          key={`conversation-${conversation.id}`}
                           className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
                             activeConversation && 
-                            activeConversation.otherUser.id === conversation.otherUser.id && 
-                            activeConversation.listing.id === conversation.listing.id
+                            activeConversation.id === conversation.id
                               ? 'bg-gray-100'
                               : ''
                           }`}
@@ -216,11 +217,10 @@ export default function MessagesPage() {
                         .filter(conversation => conversation.unreadCount > 0)
                         .map((conversation) => (
                           <div 
-                            key={`unread-${conversation.otherUser.id}-${conversation.listing.id}`}
+                            key={`unread-conversation-${conversation.id}`}
                             className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
                               activeConversation && 
-                              activeConversation.otherUser.id === conversation.otherUser.id && 
-                              activeConversation.listing.id === conversation.listing.id
+                              activeConversation.id === conversation.id
                                 ? 'bg-gray-100'
                                 : ''
                             }`}
