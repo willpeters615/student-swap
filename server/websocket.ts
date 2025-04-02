@@ -18,7 +18,8 @@ export enum MessageType {
   TYPING = 'typing',
   STOPPED_TYPING = 'stopped_typing',
   ERROR = 'error',
-  NEW_MESSAGE = 'new_message' // Add new_message type
+  NEW_MESSAGE = 'new_message',
+  MESSAGES_CLEARED = 'messages_cleared' // Add message clearing type
 }
 
 // Interface for WebSocket message format

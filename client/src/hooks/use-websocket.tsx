@@ -26,7 +26,8 @@ export enum MessageType {
   TYPING = 'typing',
   STOPPED_TYPING = 'stopped_typing',
   ERROR = 'error',
-  NEW_MESSAGE = 'new_message'
+  NEW_MESSAGE = 'new_message',
+  MESSAGES_CLEARED = 'messages_cleared'
 }
 
 // Message interface
@@ -48,6 +49,7 @@ type WebSocketContextType = {
   sendMessage: (receiverId: number, listingId: number, content: string) => void;
   markAsRead: (messageId: number) => void;
   setTyping: (receiverId: number, targetId: number, isTyping: boolean) => void;
+  clearMessages: (conversationId: number) => void;
   onlineUsers: OnlineUsers;
   typingUsers: TypingStatus;
 };
@@ -153,6 +155,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         case MessageType.ERROR:
           handleError(message.payload);
           break;
+        case MessageType.MESSAGES_CLEARED:
+          handleMessagesCleared(message.payload);
+          break;
         default:
           console.warn('Unknown message type:', message.type);
       }
@@ -229,6 +234,29 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     });
   };
   
+  // Handle messages cleared event
+  const handleMessagesCleared = (payload: { conversationId: number, clearedBy: number }) => {
+    toast({
+      title: 'Chat Cleared',
+      description: 'All messages in this conversation have been cleared',
+    });
+    
+    // Invalidate cached messages to trigger a refetch
+    queryClient.invalidateQueries({
+      queryKey: [`/api/conversations/${payload.conversationId}/messages`]
+    });
+    
+    // Also invalidate conversations list
+    queryClient.invalidateQueries({
+      queryKey: ['/api/messages']
+    });
+    
+    // Invalidate legacy endpoints as well
+    queryClient.invalidateQueries({
+      queryKey: ['/api/messages']
+    });
+  };
+  
   // Send a message
   const sendMessage = (receiverId: number, listingId: number, content: string) => {
     if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
@@ -281,6 +309,57 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     socket.current.send(JSON.stringify(message));
   };
   
+  // Clear all messages in a conversation
+  const clearMessages = (conversationId: number) => {
+    if (!socket.current || socket.current.readyState !== WebSocket.OPEN) {
+      toast({
+        title: 'Connection Error',
+        description: 'Not connected to the messaging service',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Call the API to clear messages
+    fetch(`/api/conversations/${conversationId}/messages`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Failed to clear messages');
+      }
+      
+      return response.json();
+    })
+    .then(() => {
+      // Invalidate message queries to reflect the changes
+      queryClient.invalidateQueries({
+        queryKey: [`/api/conversations/${conversationId}/messages`]
+      });
+      
+      // Also invalidate conversations list
+      queryClient.invalidateQueries({
+        queryKey: ['/api/messages']
+      });
+      
+      toast({
+        title: 'Chat Cleared',
+        description: 'All messages in this conversation have been cleared',
+      });
+    })
+    .catch(error => {
+      console.error('Error clearing messages:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to clear messages',
+        variant: 'destructive',
+      });
+    });
+  };
+  
   return (
     <WebSocketContext.Provider
       value={{
@@ -288,6 +367,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         sendMessage,
         markAsRead,
         setTyping,
+        clearMessages,
         onlineUsers,
         typingUsers
       }}

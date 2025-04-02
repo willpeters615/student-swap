@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { User, Message } from '@shared/schema';
-import { Send, ArrowLeft } from 'lucide-react';
+import { Send, ArrowLeft, Trash2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { MessageType } from '@/hooks/use-websocket';
@@ -13,6 +13,17 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { Link } from 'wouter';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface ChatInterfaceProps {
   otherUser: Omit<User, 'password'>;
@@ -30,7 +41,7 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
     createdAt: otherUser.createdAt === undefined ? null : otherUser.createdAt,
   };
   const { user } = useAuth();
-  const { sendMessage, markAsRead, setTyping, onlineUsers, typingUsers } = useWebSocket();
+  const { sendMessage, markAsRead, setTyping, clearMessages, onlineUsers, typingUsers } = useWebSocket();
   const [message, setMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
@@ -126,6 +137,13 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
     }
   };
   
+  // Clear all messages in the conversation
+  const handleClearMessages = () => {
+    if (conversationId) {
+      clearMessages(conversationId);
+    }
+  };
+  
   // Get the first initial for avatar
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
   
@@ -170,6 +188,29 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
             </Link>
           </div>
         </div>
+        
+        {/* Clear messages button with confirmation dialog */}
+        {conversationId && messages && messages.length > 0 && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" title="Clear messages">
+                <Trash2 className="h-5 w-5 text-muted-foreground" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear chat history?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all messages in this conversation. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearMessages}>Clear</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
       
       {/* Messages container */}

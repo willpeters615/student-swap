@@ -463,6 +463,29 @@ export class MemStorage implements IStorage {
     this.conversations.set(conversationId, updatedConversation);
     return updatedConversation;
   }
+  
+  async deleteConversationMessages(conversationId: number): Promise<boolean> {
+    try {
+      // Find all messages in this conversation
+      const conversationMessages = Array.from(this.messages.values())
+        .filter(message => message.conversationId === conversationId);
+      
+      // Delete each message
+      for (const message of conversationMessages) {
+        if (message.id !== undefined) {
+          this.messages.delete(message.id);
+        }
+      }
+      
+      // Update conversation timestamp
+      await this.updateConversationTimestamp(conversationId);
+      
+      return true;
+    } catch (error) {
+      console.error("Error deleting conversation messages:", error);
+      return false;
+    }
+  }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -880,6 +903,23 @@ export class DatabaseStorage implements IStorage {
       .where(eq(conversations.id, conversationId))
       .returning();
     return result[0];
+  }
+  
+  async deleteConversationMessages(conversationId: number): Promise<boolean> {
+    try {
+      // Delete all messages from this conversation
+      const result = await this.db
+        .delete(messages)
+        .where(eq(messages.conversationId, conversationId));
+      
+      // Update conversation timestamp
+      await this.updateConversationTimestamp(conversationId);
+      
+      return true;
+    } catch (error) {
+      console.error("Error deleting conversation messages:", error);
+      return false;
+    }
   }
 }
 
