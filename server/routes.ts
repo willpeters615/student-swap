@@ -744,6 +744,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete all messages in a conversation
+  app.delete("/api/conversations/:id/messages", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const conversationId = parseInt(req.params.id);
+      const userId = req.user.id;
+      
+      // Verify the user is a participant in this conversation
+      const conversation = await storage.getConversation(conversationId);
+      
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      
+      const participants = await storage.getConversationParticipants(conversationId);
+      const isParticipant = participants.some(p => p.userId === userId);
+      
+      if (!isParticipant) {
+        return res.status(403).json({ error: "You are not a participant in this conversation" });
+      }
+      
+      // Delete all messages in the conversation
+      const success = await storage.deleteConversationMessages(conversationId);
+      
+      if (success) {
+        // Notify other participants via WebSocket about the cleared messages
+        const wss = getWebSocketServer();
+        if (wss) {
+          participants.forEach(participant => {
+            if (participant.userId !== userId) {
+              wss.sendToUser(participant.userId, {
+                type: MessageType.MESSAGES_CLEARED,
+                payload: {
+                  conversationId,
+                  clearedBy: userId
+                }
+              });
+            }
+          });
+        }
+        
+        res.status(200).json({ success: true, message: "All messages deleted" });
+      } else {
+        res.status(500).json({ error: "Failed to delete messages" });
+      }
+    } catch (error) {
+      console.error("Error deleting messages:", error);
+      res.status(500).json({ error: "Failed to delete messages" });
+    }
+  });
+
   const httpServer = createServer(app);
   
   // Initialize WebSocket server

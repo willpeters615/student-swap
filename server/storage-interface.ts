@@ -46,6 +46,7 @@ export interface IStorage {
   getConversationMessages(conversationId: number): Promise<Message[]>;
   markConversationAsRead(conversationId: number, userId: number): Promise<ConversationParticipant | undefined>;
   updateConversationTimestamp(conversationId: number): Promise<Conversation | undefined>;
+  deleteConversationMessages(conversationId: number): Promise<boolean>;
   
   // Session store
   sessionStore: any; // Express session store
