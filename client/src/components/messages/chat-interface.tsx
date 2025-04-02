@@ -22,6 +22,13 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: ChatInterfaceProps) {
+  // Ensure verified is non-undefined
+  const safeOtherUser: Omit<User, 'password'> = {
+    ...otherUser,
+    verified: otherUser.verified === undefined ? null : otherUser.verified,
+    university: otherUser.university === undefined ? null : otherUser.university,
+    createdAt: otherUser.createdAt === undefined ? null : otherUser.createdAt,
+  };
   const { user } = useAuth();
   const { sendMessage, markAsRead, setTyping, onlineUsers, typingUsers } = useWebSocket();
   const [message, setMessage] = useState('');
@@ -30,7 +37,7 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   
   // Fetch messages
   const { data: messages, isLoading } = useQuery<Message[]>({
-    queryKey: [`/api/messages/${otherUser.id}/${listingId}`],
+    queryKey: [`/api/messages/${safeOtherUser.id}/${listingId}`],
     refetchInterval: 5000, // Fallback polling in case WebSocket fails
   });
   
@@ -41,11 +48,23 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
     }
   }, [messages]);
   
-  // Mark messages as read
+  // Mark messages as read - using the message schema from the database
+  interface NewMessage {
+    id: number;
+    createdAt: Date | null;
+    conversationId: number;
+    senderId: number;
+    content: string;
+    hasAttachment: boolean | null;
+    attachmentUrl: string | null;
+    readAt: Date | null;
+  }
+  
   useEffect(() => {
     if (messages && user) {
-      messages.forEach(msg => {
-        if (msg.receiverId === user.id && !msg.read) {
+      (messages as unknown as NewMessage[]).forEach(msg => {
+        // readAt is null means message is unread
+        if (msg.senderId !== user.id && !msg.readAt) {
           markAsRead(msg.id);
         }
       });
@@ -62,11 +81,11 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
     }
     
     // Set typing status to true
-    setTyping(otherUser.id, listingId, true);
+    setTyping(safeOtherUser.id, listingId, true);
     
     // Set a timeout to set typing status to false after 2 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
-      setTyping(otherUser.id, listingId, false);
+      setTyping(safeOtherUser.id, listingId, false);
     }, 2000);
   };
   
@@ -74,11 +93,11 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   const handleSendMessage = () => {
     if (!message.trim() || !user) return;
     
-    sendMessage(otherUser.id, listingId, message.trim());
+    sendMessage(safeOtherUser.id, listingId, message.trim());
     setMessage('');
     
     // Clear typing indicator immediately after sending
-    setTyping(otherUser.id, listingId, false);
+    setTyping(safeOtherUser.id, listingId, false);
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
@@ -96,10 +115,10 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
   const getInitial = (name: string) => name.charAt(0).toUpperCase();
   
   // Check if the other user is currently typing in this conversation
-  const isOtherUserTyping = typingUsers[`${otherUser.id}-${listingId}`];
+  const isOtherUserTyping = typingUsers[`${safeOtherUser.id}-${listingId}`];
   
   // Check if the other user is online
-  const isOtherUserOnline = onlineUsers[otherUser.id] || false;
+  const isOtherUserOnline = onlineUsers[safeOtherUser.id] || false;
   
   return (
     <div className="flex flex-col h-full">
@@ -115,13 +134,13 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
         </Button>
         
         <Avatar className="h-10 w-10">
-          <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${otherUser.username}`} />
-          <AvatarFallback>{getInitial(otherUser.username)}</AvatarFallback>
+          <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${safeOtherUser.username}`} />
+          <AvatarFallback>{getInitial(safeOtherUser.username)}</AvatarFallback>
         </Avatar>
         
         <div className="ml-2 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-semibold">{otherUser.username}</span>
+            <span className="font-semibold">{safeOtherUser.username}</span>
             {isOtherUserOnline && (
               <Badge variant="outline" className="bg-green-500 h-2 w-2 rounded-full p-0" />
             )}
@@ -166,7 +185,7 @@ export function ChatInterface({ otherUser, listingId, listingTitle, onBack }: Ch
                   </div>
                   <div className={`text-xs text-muted-foreground mt-1 ${isSentByMe ? 'text-right' : 'text-left'}`}>
                     {format(messageDate, 'p')}
-                    {isSentByMe && msg.read && <span className="ml-1">✓</span>}
+                    {isSentByMe && (msg as unknown as NewMessage).readAt && <span className="ml-1">✓</span>}
                   </div>
                 </div>
               </div>
